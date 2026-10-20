@@ -1,14 +1,12 @@
 // ====================================================================
 // 會議結果高密度 QR Code 壓縮封裝與還原模組 (LZ-String)
-// 將整場會議的出席統計、所有議案表決票數與坪數權重決議結果壓縮成單一 QR 碼
-// 住戶或稽核人員免上網掃碼即可 100% 還原大會紀錄
+// 同時相容「純離線資料」與「iPhone相機/LINE掃碼直開網址」
 // ====================================================================
 
 import LZString from 'lz-string';
 import { MeetingResultPayload, Meeting, Topic, Community } from '../types';
 import { calculateTopicStats, getMembers } from './storage';
 
-// 產生數位簽章簡易指紋
 function generateHash(str: string): string {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -74,24 +72,112 @@ export function buildMeetingResultPayload(
   return payload;
 }
 
-// 壓縮成 QR Code 內容字串 (前綴 MTG:)
-export function encodeMeetingResult(payload: MeetingResultPayload): string {
-  const jsonStr = JSON.stringify(payload);
-  const compressed = LZString.compressToEncodedURIComponent(jsonStr);
-  return 'MTG:' + compressed;
+// 輕量化壓縮物件 (縮減欄位長度，讓 QR Code 點陣更稀疏、手機更容易秒讀)
+function toCompactJson(p: MeetingResultPayload): string {
+  const compact = {
+    c: p.communityName,
+    t: p.meetingTitle,
+    d: p.meetingDate,
+    l: p.location,
+    s: [p.stats.totalUnits, p.stats.attendees, p.stats.attendanceRate, p.stats.totalPing, p.stats.attendedPing, p.stats.pingRate],
+    r: p.topics.map(t => ({
+      o: t.order,
+      t: t.title,
+      d: t.decision,
+      opts: t.options.map(o => [o.label, o.votes, o.weight, o.percent]),
+    })),
+    sig: p.signature,
+  };
+  return JSON.stringify(compact);
 }
 
-// 掃描還原
+function fromCompactJson(compact: any): MeetingResultPayload {
+  return {
+    version: '1.0',
+    communityName: compact.c,
+    meetingTitle: compact.t,
+    meetingDate: compact.d,
+    location: compact.l,
+    stats: {
+      totalUnits: compact.s[0],
+      attendees: compact.s[1],
+      attendanceRate: compact.s[2],
+      totalPing: compact.s[3],
+      attendedPing: compact.s[4],
+      pingRate: compact.s[5],
+    },
+    topics: compact.r.map((r: any) => ({
+      order: r.o,
+      title: r.t,
+      type: 'yes_no',
+      decision: r.d,
+      options: r.opts.map((opt: any) => ({
+        label: opt[0],
+        votes: opt[1],
+        weight: opt[2],
+        percent: opt[3],
+      })),
+    })),
+    signature: compact.sig,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+// 壓縮成 QR Code 內容字串
+// 輸出 Universal URL (格式：https://.../#res=MTG:...)
+// 這樣「iPhone 內建相機」能直接辨識為網址點開；「系統內相機」也能直接解碼！
+export function encodeMeetingResult(payload: MeetingResultPayload): string {
+  const compactJson = toCompactJson(payload);
+  const compressed = LZString.compressToEncodedURIComponent(compactJson);
+  const token = 'MTG:' + compressed;
+
+  // 取得當前網頁基礎網址 (例如：https://ericlai429.github.io/Resident-Voting/)
+  if (typeof window !== 'undefined') {
+    const baseUrl = window.location.origin + window.location.pathname;
+    return `${baseUrl}#res=${token}`;
+  }
+
+  return token;
+}
+
+// 掃描還原 (同時相容：完整 URL、#res=...、?res=... 與純 MTG: 代碼)
 export function decodeMeetingResult(rawQrText: string): MeetingResultPayload | null {
   if (!rawQrText) return null;
-  const clean = rawQrText.trim();
-  if (!clean.startsWith('MTG:')) return null;
+  let clean = rawQrText.trim();
+
+  // 1. 若是 URL，擷取 #res= 或 ?res= 後面的密碼串
+  if (clean.includes('#res=')) {
+    clean = clean.split('#res=')[1];
+  } else if (clean.includes('?res=')) {
+    clean = clean.split('?res=')[1].split('&')[0];
+  }
+
+  // 2. 檢驗並移除 MTG: 前綴
+  if (clean.startsWith('MTG:')) {
+    clean = clean.replace('MTG:', '');
+  }
 
   try {
-    const compressed = clean.replace('MTG:', '');
-    const decompressed = LZString.decompressFromEncodedURIComponent(compressed);
+    // 先以 LZString 解壓縮
+    let decompressed = LZString.decompressFromEncodedURIComponent(clean);
+    if (!decompressed) {
+      // 容錯嘗試 decodeURIComponent 再解壓
+      try {
+        decompressed = LZString.decompressFromEncodedURIComponent(decodeURIComponent(clean));
+      } catch {}
+    }
+
     if (!decompressed) return null;
-    return JSON.parse(decompressed) as MeetingResultPayload;
+
+    const parsed = JSON.parse(decompressed);
+
+    // 判斷是否為輕量化格式
+    if (parsed.c && parsed.t && parsed.r) {
+      return fromCompactJson(parsed);
+    }
+
+    // 或是原始標準格式
+    return parsed as MeetingResultPayload;
   } catch (err) {
     console.error('解碼會議 QR 碼失敗:', err);
     return null;

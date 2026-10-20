@@ -61,6 +61,10 @@ export function App() {
 
   useEffect(() => {
     loadAppState();
+    // 若網址帶有會議結算憑證代碼 (例如 iPhone 原生相機直接掃描)
+    if (window.location.hash.includes('#res=') || window.location.search.includes('res=')) {
+      setCurrentTab('qr_summary');
+    }
   }, []);
 
   // 切換社區
