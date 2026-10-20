@@ -120,8 +120,8 @@ export function App() {
         onUpdateAccessibility={handleUpdateAccessibility}
       />
 
-      {/* 主工作區視圖切換 */}
-      <main className="flex-1 pb-16">
+      {/* 主工作區視圖切換 (iPhone 12 自適應與底部留白) */}
+      <main className="flex-1 pb-24 md:pb-12">
         {currentTab === 'resident_vote' && (
           currentMember && activeCommunity ? (
             <ResidentVoteView
