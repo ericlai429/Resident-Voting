@@ -44,6 +44,7 @@ export const QrCodeSummaryView: React.FC<QrCodeSummaryViewProps> = ({
   const [manualCodeInput, setManualCodeInput] = useState('');
   const [manualError, setManualError] = useState('');
   const [selfTestSuccess, setSelfTestSuccess] = useState(false);
+  const [qrTargetMode, setQrTargetMode] = useState<'cloud' | 'lan' | 'local' | 'pure'>('cloud');
 
   // 安全備援會議物件，保證絕不因 meeting 為空而中斷或無法生成
   const activeMeeting: Meeting = useMemo(() => {
@@ -72,7 +73,18 @@ export const QrCodeSummaryView: React.FC<QrCodeSummaryViewProps> = ({
       const data = buildMeetingResultPayload(community, activeMeeting, topics);
       setPayload(data);
 
-      const encoded = encodeMeetingResult(data);
+      let customUrl: string | undefined = undefined;
+      if (qrTargetMode === 'cloud') {
+        customUrl = 'https://ericlai429.github.io/Resident-Voting/';
+      } else if (qrTargetMode === 'lan') {
+        customUrl = 'http://192.168.1.116:5173/';
+      } else if (qrTargetMode === 'local') {
+        customUrl = 'http://localhost:5173/';
+      } else if (qrTargetMode === 'pure') {
+        customUrl = 'pure';
+      }
+
+      const encoded = encodeMeetingResult(data, customUrl);
       setEncodedString(encoded);
 
       QRCode.toDataURL(encoded, {
@@ -93,7 +105,7 @@ export const QrCodeSummaryView: React.FC<QrCodeSummaryViewProps> = ({
 
   useEffect(() => {
     generateCertificate();
-  }, [community, activeMeeting]);
+  }, [community, activeMeeting, qrTargetMode]);
 
   // 2. 檢驗目前網址列是否由外部相機（如 iPhone 相機或 LINE）掃描帶入
   useEffect(() => {
@@ -371,6 +383,59 @@ export const QrCodeSummaryView: React.FC<QrCodeSummaryViewProps> = ({
               </button>
             </div>
 
+            {/* 掃碼目標網址切換器 (解決手機掃 localhost 無反應問題) */}
+            <div className="mb-3 rounded-xl bg-purple-50/70 p-2 border border-purple-200 text-xs">
+              <span className="font-bold text-purple-900 text-[11px] block mb-1">
+                🔗 掃碼目標網址模式 (手機請選「線上站」)：
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 font-bold text-[10.5px]">
+                <button
+                  type="button"
+                  onClick={() => setQrTargetMode('cloud')}
+                  className={`py-1 px-1.5 rounded-lg border text-center transition-all ${
+                    qrTargetMode === 'cloud'
+                      ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-purple-100/50'
+                  }`}
+                >
+                  🌐 手機直掃 (線上站)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQrTargetMode('lan')}
+                  className={`py-1 px-1.5 rounded-lg border text-center transition-all ${
+                    qrTargetMode === 'lan'
+                      ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-purple-100/50'
+                  }`}
+                >
+                  📶 區網 (192.168.1.116)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQrTargetMode('local')}
+                  className={`py-1 px-1.5 rounded-lg border text-center transition-all ${
+                    qrTargetMode === 'local'
+                      ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-purple-100/50'
+                  }`}
+                >
+                  💻 本地 (localhost)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQrTargetMode('pure')}
+                  className={`py-1 px-1.5 rounded-lg border text-center transition-all ${
+                    qrTargetMode === 'pure'
+                      ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-purple-100/50'
+                  }`}
+                >
+                  🔲 純數據 (無網址)
+                </button>
+              </div>
+            </div>
+
             <div className="rounded-2xl border-4 border-purple-100 bg-white p-3 text-center shadow-inner">
               {qrDataUrl ? (
                 <img
@@ -386,15 +451,25 @@ export const QrCodeSummaryView: React.FC<QrCodeSummaryViewProps> = ({
               )}
             </div>
 
-            <div className="mt-3 text-center">
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
               <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-3 py-1 text-xs font-mono font-bold text-purple-800 border border-purple-200">
                 <ShieldCheck size={14} />
                 防偽校驗簽章: {payload?.signature || '----'}
               </span>
+
+              {/* 本地端 0 秒自檢驗收按鈕 */}
+              <button
+                type="button"
+                onClick={handleSelfTest}
+                className="inline-flex items-center gap-1 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 text-xs font-black shadow-xs transition-all active:scale-95"
+              >
+                <Sparkles size={13} />
+                <span>⚡ 本地端一鍵自檢驗收</span>
+              </button>
             </div>
 
             <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600 border border-slate-200 leading-relaxed">
-              💡 <b>支援 iPhone 內建相機直掃</b>：拿另一隻手機開啟「相機」對準上方 QR Code，會自動彈出黃色連結，點一下即可在 Safari 中秒速打開並還原整場會議完整數據！
+              💡 <b>手機實機測試指引</b>：上方已預設採用「線上站模式」，手機相機對準 QR 碼彈出黃色連結點開後，即可直接連線 GitHub Pages 驗收整場大會還原資訊！若在電腦端點擊綠色<b>「⚡ 本地端一鍵自檢驗收」</b>即可 0 秒模擬相機掃碼。
             </div>
           </div>
 

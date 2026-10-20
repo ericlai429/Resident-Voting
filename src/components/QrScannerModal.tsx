@@ -35,24 +35,46 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
         const scanner = new Html5Qrcode(scannerContainerId);
         scannerRef.current = scanner;
 
-        await scanner.start(
-          { facingMode: 'environment' },
-          {
-            fps: 10,
-            qrbox: { width: 260, height: 260 },
-          },
-          (decodedText) => {
-            stopScanning();
-            onScanSuccess(decodedText);
-          },
-          () => {
-            // 解析中的暫時無效影格忽略
+        try {
+          await scanner.start(
+            { facingMode: 'environment' },
+            {
+              fps: 10,
+              qrbox: { width: 260, height: 260 },
+            },
+            (decodedText) => {
+              stopScanning();
+              onScanSuccess(decodedText);
+            },
+            () => {
+              // 解析中的暫時無效影格忽略
+            }
+          );
+          setIsScanning(true);
+        } catch (envErr) {
+          // 電腦 WebCam / 前鏡頭備援啟動 (解決 Windows 筆電或桌機沒有後置鏡頭報錯)
+          try {
+            await scanner.start(
+              { facingMode: 'user' },
+              {
+                fps: 10,
+                qrbox: { width: 260, height: 260 },
+              },
+              (decodedText) => {
+                stopScanning();
+                onScanSuccess(decodedText);
+              },
+              () => {}
+            );
+            setIsScanning(true);
+          } catch (userErr) {
+            console.warn('相機鏡頭啟動受阻:', envErr, userErr);
+            setErrorMessage('無法啟用相機鏡頭（可能是權限未允許或無攝影機），您可以點選下方按鈕上傳 QR 碼圖片。');
           }
-        );
-        setIsScanning(true);
-      } catch (err: unknown) {
-        console.warn('鏡頭啟動受阻:', err);
-        setErrorMessage('無法啟用相機鏡頭（可能是權限未允許或不支援），您可以點選下方按鈕上傳 QR 碼圖片。');
+        }
+      } catch (err) {
+        console.error('QR Scanner init error:', err);
+        setErrorMessage('相機初始化失敗，請確認相機權限或直接上傳圖片。');
       }
     };
 

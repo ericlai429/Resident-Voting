@@ -126,14 +126,26 @@ function fromCompactJson(compact: any): MeetingResultPayload {
 // 壓縮成 QR Code 內容字串
 // 輸出 Universal URL (格式：https://.../#res=MTG:...)
 // 這樣「iPhone 內建相機」能直接辨識為網址點開；「系統內相機」也能直接解碼！
-export function encodeMeetingResult(payload: MeetingResultPayload): string {
+export function encodeMeetingResult(payload: MeetingResultPayload, customBaseUrl?: string): string {
   const compactJson = toCompactJson(payload);
   const compressed = LZString.compressToEncodedURIComponent(compactJson);
   const token = 'MTG:' + compressed;
 
-  // 取得當前網頁基礎網址 (例如：https://ericlai429.github.io/Resident-Voting/)
+  if (customBaseUrl) {
+    if (customBaseUrl === 'pure') {
+      return token;
+    }
+    const cleanBase = customBaseUrl.replace(/#.*$/, '').replace(/\?.*$/, '');
+    return `${cleanBase}#res=${token}`;
+  }
+
+  // 取得當前網頁基礎網址 (優先採用外部手機可直接訪問的網址)
   if (typeof window !== 'undefined') {
-    const baseUrl = window.location.origin + window.location.pathname;
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    // 若在本地開發端 (localhost)，手機無法連線至電腦的 localhost，因此預設帶入正式線上站
+    const baseUrl = isLocalhost
+      ? 'https://ericlai429.github.io/Resident-Voting/'
+      : window.location.origin + window.location.pathname;
     return `${baseUrl}#res=${token}`;
   }
 
@@ -152,9 +164,12 @@ export function decodeMeetingResult(rawQrText: string): MeetingResultPayload | n
     clean = clean.split('?res=')[1].split('&')[0];
   }
 
+  // 清除尾端可能的 query params 或 slashes
+  clean = clean.split('&')[0].replace(/\/$/, '');
+
   // 2. 檢驗並移除 MTG: 前綴
   if (clean.startsWith('MTG:')) {
-    clean = clean.replace('MTG:', '');
+    clean = clean.substring(4);
   }
 
   try {
@@ -164,6 +179,11 @@ export function decodeMeetingResult(rawQrText: string): MeetingResultPayload | n
       // 容錯嘗試 decodeURIComponent 再解壓
       try {
         decompressed = LZString.decompressFromEncodedURIComponent(decodeURIComponent(clean));
+      } catch {}
+    }
+    if (!decompressed) {
+      try {
+        decompressed = LZString.decompressFromUTF16(clean);
       } catch {}
     }
 
