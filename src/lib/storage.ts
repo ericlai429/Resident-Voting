@@ -751,11 +751,19 @@ export function saveTopic(topic: Topic) {
     list.push(topic);
   }
   localStorage.setItem(STORAGE_KEY_TOPICS, JSON.stringify(list));
+  broadcastSyncEvent({
+    type: 'TOPIC_UPDATED',
+    timestamp: Date.now(),
+  });
 }
 
 export function deleteTopic(topicId: string) {
   const list = getTopics().filter(t => t.id !== topicId);
   localStorage.setItem(STORAGE_KEY_TOPICS, JSON.stringify(list));
+  broadcastSyncEvent({
+    type: 'TOPIC_UPDATED',
+    timestamp: Date.now(),
+  });
 }
 
 export function getVotes(topicId?: string): Vote[] {
@@ -777,6 +785,12 @@ export function addVote(vote: Vote): { success: boolean; message: string } {
 
   list.push(vote);
   localStorage.setItem(STORAGE_KEY_VOTES, JSON.stringify(list));
+
+  // 全域即時廣播：讓大螢幕、Admin 與所有終端 0 秒同步更新得票戰報
+  broadcastSyncEvent({
+    type: 'VOTE_SUBMITTED',
+    timestamp: Date.now(),
+  });
 
   const client = getSupabase();
   if (client) {
@@ -828,18 +842,32 @@ export function calculateTopicStats(topic: Topic, _communityTotalPing?: number, 
     const yesCount = yesStat ? yesStat.vote_count : 0;
     const yesWeight = yesStat ? yesStat.vote_weight : 0;
 
-    if (totalVotes > 0 && yesCount > (totalVotes - yesCount) && yesWeight >= (totalWeight * 0.5)) {
+    // 依據台灣《公寓大廈管理條例》第31條法定雙門檻結算 (出席人數過半數 且 區分所有權持分比例過半數)
+    const isCountPass = totalVotes > 0 && yesCount > totalVotes * 0.5;
+    const isWeightPass = totalWeight > 0 && yesWeight > totalWeight * 0.5;
+
+    if (isCountPass && isWeightPass) {
       passed = true;
-      decisionSummary = '決議通過 (符合戶數與權利雙門檻)';
+      decisionSummary = `決議通過 (同意: 戶數 ${yesStat?.count_percentage}% / 權重 ${yesStat?.weight_percentage}%，符合法定雙門檻)`;
     } else {
       passed = false;
-      decisionSummary = totalVotes === 0 ? '無投票紀錄' : '未達法定決議門檻 (不通過)';
+      if (totalVotes === 0) {
+        decisionSummary = '尚未有投票記錄';
+      } else {
+        const failReasons: string[] = [];
+        if (!isCountPass) failReasons.push(`同意戶數未過半 (${yesStat?.count_percentage || 0}%)`);
+        if (!isWeightPass) failReasons.push(`同意持分未過半 (${yesStat?.weight_percentage || 0}%)`);
+        decisionSummary = `未達法定雙門檻 (不通過: ${failReasons.join('、')})`;
+      }
     }
   } else {
     const sorted = [...optionsStats].sort((a, b) => b.vote_count - a.vote_count);
     if (sorted.length > 0 && sorted[0].vote_count > 0) {
-      decisionSummary = `由【${sorted[0].option_label}】最高票勝出 (${sorted[0].vote_count} 票 / ${sorted[0].weight_percentage}%)`;
+      decisionSummary = `由【${sorted[0].option_label}】最高票勝出 (${sorted[0].vote_count} 票 / ${sorted[0].weight_percentage}% 權重)`;
       passed = true;
+    } else {
+      decisionSummary = '尚未有投票記錄';
+      passed = false;
     }
   }
 
@@ -868,22 +896,32 @@ export function purgeVotesAndResetCheckIns(communityId?: string): { success: boo
   // 2. 清空大會服務台求助單
   localStorage.setItem(STORAGE_KEY_AUTH_REQUESTS, JSON.stringify([]));
 
-  // 3. 重置住戶報到與手機特徵鎖定狀態
-  const members = getMembers(communityId);
-  const resetMembers = members.map(m => ({
-    ...m,
-    is_checked_in: false,
-    check_in_time: undefined,
-    bound_device_token: undefined,
-  }));
+  // 3. 重置住戶報到與手機特徵鎖定狀態 (保留名冊架構，重置狀態)
+  const targetCommId = communityId || getActiveCommunityId();
+  const allMembers = getMembers(); // 取得全域所有社區名冊
+  const resetMembers = allMembers.map(m => {
+    if (!communityId || m.community_id === targetCommId) {
+      return {
+        ...m,
+        is_checked_in: false,
+        check_in_time: undefined,
+        bound_device_token: undefined,
+      };
+    }
+    return m;
+  });
   saveMembers(resetMembers);
 
   // 4. 清除本機登入 Session
   setCurrentMember(null);
 
-  // 5. 跨分頁即時廣播通知
+  // 5. 跨分頁即時廣播通知 (同步刷新大螢幕與名冊)
   broadcastSyncEvent({
     type: 'VOTE_SUBMITTED',
+    timestamp: Date.now(),
+  });
+  broadcastSyncEvent({
+    type: 'MEMBER_AUTHORIZED',
     timestamp: Date.now(),
   });
 
@@ -904,16 +942,37 @@ export function purgeAllDemoDataForOfficialRoster(communityId?: string): { succe
   localStorage.setItem(STORAGE_KEY_VOTES, JSON.stringify([]));
   localStorage.setItem(STORAGE_KEY_AUTH_REQUESTS, JSON.stringify([]));
 
-  // 2. 保留管理員帳號 (便於進入後台)，其餘示範名冊全數淨空
-  const members = getMembers(communityId);
-  const adminMember = members.find(m => m.role === 'admin' || m.role === 'admin1');
-  const cleanMembers: Member[] = adminMember ? [{
-    ...adminMember,
+  // 2. 保留或自動建立管理員帳號 (便於進入後台匯入)，其餘示範假名冊全數淨空
+  const targetCommId = communityId || getActiveCommunityId();
+  const allMembers = getMembers();
+  const otherCommMembers = allMembers.filter(m => m.community_id !== targetCommId);
+
+  const existingAdmin = allMembers.find(
+    m => m.community_id === targetCommId && (m.role === 'admin' || m.role === 'admin1')
+  );
+
+  const adminAccount: Member = existingAdmin ? {
+    ...existingAdmin,
     is_checked_in: false,
     check_in_time: undefined,
     bound_device_token: undefined,
-  }] : [];
+  } : {
+    id: `mem-admin-${targetCommId}`,
+    community_id: targetCommId,
+    unit_no: '管理委員會',
+    floor: 'Admin',
+    owner_name: '管委會主委',
+    phone_last4: '8888',
+    phone_full: '0988-888-888',
+    area_ping: 0.0,
+    weight_ratio: 0.0,
+    role: 'admin',
+    is_checked_in: false,
+    reset_token: `ADMIN-PASS-${targetCommId}`,
+    created_at: new Date().toISOString(),
+  };
 
+  const cleanMembers: Member[] = [...otherCommMembers, adminAccount];
   saveMembers(cleanMembers);
 
   // 3. 清除本機登入 Session
@@ -921,17 +980,20 @@ export function purgeAllDemoDataForOfficialRoster(communityId?: string): { succe
 
   // 4. 更新社區戶數與坪數為 0，等待 Excel 匯入
   const comms = getCommunities();
-  const currentCommId = communityId || getActiveCommunityId();
-  const targetComm = comms.find(c => c.id === currentCommId);
+  const targetComm = comms.find(c => c.id === targetCommId);
   if (targetComm) {
     saveCommunity({
       ...targetComm,
-      total_units: cleanMembers.length,
-      total_area_ping: cleanMembers.reduce((sum, m) => sum + m.area_ping, 0),
+      total_units: 0,
+      total_area_ping: 0,
     });
   }
 
   // 5. 跨分頁即時推播
+  broadcastSyncEvent({
+    type: 'VOTE_SUBMITTED',
+    timestamp: Date.now(),
+  });
   broadcastSyncEvent({
     type: 'MEMBER_AUTHORIZED',
     timestamp: Date.now(),

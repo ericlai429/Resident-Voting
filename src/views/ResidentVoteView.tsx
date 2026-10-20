@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Member,
   Meeting,
@@ -11,6 +11,7 @@ import {
   getTopics,
   getVotes,
   addVote,
+  subscribeToSyncEvents,
 } from '../lib/storage';
 import { UniversalButton } from '../components/UniversalButton';
 import {
@@ -48,10 +49,21 @@ export const ResidentVoteView: React.FC<ResidentVoteViewProps> = ({
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
   // 重新載入投票狀態
-  const refreshVotes = () => {
+  const refreshVotes = useCallback(() => {
     setVotes(getVotes());
     setTopics(getTopics(meeting?.id));
-  };
+  }, [meeting?.id]);
+
+  // 即時監聽議案狀態更新與全域事件
+  useEffect(() => {
+    const handleSync = (event: { type: string }) => {
+      if (event.type === 'TOPIC_UPDATED' || event.type === 'VOTE_SUBMITTED') {
+        refreshVotes();
+      }
+    };
+    const unsubscribe = subscribeToSyncEvents(handleSync);
+    return () => unsubscribe();
+  }, [refreshVotes]);
 
   const handleSelectOption = (topic: Topic, option: TopicOption) => {
     setConfirmModal({ topic, option });

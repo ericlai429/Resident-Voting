@@ -18,7 +18,6 @@ import {
   generateRandomPin,
   getTodayMidnightISO,
   getMembers,
-  updateMember,
   calculateTopicStats,
   getDeskAuthRequests,
   approveDeskAuthRequest,
@@ -47,6 +46,9 @@ import {
   Zap,
   Check,
   RotateCcw,
+  Printer,
+  MessageCircle,
+  Copy,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -54,6 +56,8 @@ interface AdminDashboardProps {
   meeting: Meeting | null;
   onRefreshData: () => void;
   onNavigateToScreen: () => void;
+  onNavigateToPassCards?: () => void;
+  onOpenLineShare?: () => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -61,6 +65,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   meeting,
   onRefreshData,
   onNavigateToScreen,
+  onNavigateToPassCards,
+  onOpenLineShare,
 }) => {
   const [topics, setTopics] = useState<Topic[]>(() => getTopics(meeting?.id));
   const [currentPin, setCurrentPin] = useState(meeting?.pin_code || '8866');
@@ -320,6 +326,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             開啟現場大螢幕即時投影
           </UniversalButton>
 
+          {onNavigateToPassCards && (
+            <button
+              onClick={onNavigateToPassCards}
+              className="flex items-center gap-1.5 rounded-2xl bg-purple-600 px-4 py-2.5 text-xs font-black text-white hover:bg-purple-700 active:scale-95 transition-all shadow-md"
+            >
+              <Printer size={16} />
+              <span>🎟️ A4 憑證卡 (12格護貝列印)</span>
+            </button>
+          )}
+
+          {onOpenLineShare && (
+            <button
+              onClick={onOpenLineShare}
+              className="flex items-center gap-1.5 rounded-2xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white hover:bg-emerald-700 active:scale-95 transition-all shadow-md"
+            >
+              <MessageCircle size={16} className="fill-white" />
+              <span>📲 LINE 防跳出分享</span>
+            </button>
+          )}
+
           <UniversalButton
             variant="outline"
             size="md"
@@ -329,6 +355,68 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             + 新增第二/第三社區
           </UniversalButton>
         </div>
+      </div>
+
+      {/* 區權會法定電子憑證卡智能生成專區 (限定 admin / admin1 啟用) */}
+      <div className="rounded-3xl bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-900 p-6 text-white shadow-xl border border-purple-500/30 flex flex-wrap items-center justify-between gap-5">
+        <div className="flex items-start gap-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-purple-500 text-white shadow-lg">
+            <FileCheck size={32} />
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-xl font-black text-white">
+                🎟️ 區權會法定電子憑證卡智能生成台
+              </h3>
+              <span className="rounded-md bg-purple-500/40 border border-purple-300 px-2.5 py-0.5 text-xs font-black text-purple-200">
+                🔒 限定 admin / admin1 啟用
+              </span>
+            </div>
+            <p className="text-xs sm:text-sm text-purple-200 leading-relaxed max-w-2xl">
+              依大會法定規格排版：<b>每張 A4 生成 12 張 QR 憑證卡</b>（3×4 格）、<b>戶號特大加粗</b>、<b>粗實心外邊框</b>、並具備<b>2公分以上護貝留邊粗虛線裁切線</b>。住戶現場出示或相機一掃即可 0 秒免打字完成身分驗證與換機登入！
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onNavigateToPassCards}
+            className="flex items-center gap-2 rounded-2xl bg-white px-5 py-3.5 text-xs sm:text-sm font-black text-purple-950 hover:bg-purple-50 active:scale-95 transition-all shadow-xl"
+          >
+            <Printer size={18} className="text-purple-700" />
+            <span>開啟 A4 12格憑證列印台 (進入印製)</span>
+          </button>
+        </div>
+      </div>
+
+      {/* LINE 社群宣傳大會專用 (方案 A 外部開啟防跳出) */}
+      <div className="rounded-3xl bg-emerald-950/90 border border-emerald-500/40 p-5 text-white shadow-lg flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-md">
+            <MessageCircle size={26} className="fill-white" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h4 className="text-base font-black text-white">
+                📲 LINE 社群宣傳大會專用 (方案 A 防跳出)
+              </h4>
+              <span className="rounded-md bg-emerald-500/30 px-2 py-0.5 text-[11px] font-bold text-emerald-300 font-mono">
+                ?openExternalBrowser=1
+              </span>
+            </div>
+            <p className="text-xs text-emerald-200 mt-0.5">
+              專為 LINE 群組設計，點擊自動呼叫 Safari / Chrome 開啟，徹底杜絕住戶滑到底部誤關閉網頁。
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={onOpenLineShare}
+          className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-black text-white hover:bg-emerald-600 active:scale-95 transition-all shadow-md"
+        >
+          <Copy size={15} />
+          <span>一鍵複製 LINE 防跳出宣傳文案</span>
+        </button>
       </div>
 
       {/* 現場當日防遠端灌票 4 碼 PIN 碼專屬控制台 */}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Community, Meeting } from '../types';
 import { getTopics } from '../lib/storage';
 import { compileMeetingReportData, triggerA3Print } from '../lib/pdfReportGenerator';
@@ -16,8 +16,8 @@ export const ReportA3View: React.FC<ReportA3ViewProps> = ({
   meeting,
   onBack,
 }) => {
-  const topics = getTopics(meeting?.id);
-  const reportData = compileMeetingReportData(
+  const topics = useMemo(() => getTopics(meeting?.id), [meeting?.id]);
+  const reportData = useMemo(() => compileMeetingReportData(
     community,
     meeting || {
       id: 'default',
@@ -33,7 +33,7 @@ export const ReportA3View: React.FC<ReportA3ViewProps> = ({
     topics,
     community.contact_name || '張文德 主任委員',
     '李建銘 總幹事'
-  );
+  ), [community, meeting, topics]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:py-10">

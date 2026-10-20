@@ -17,8 +17,9 @@ import {
   X,
   ChevronRight,
   Sparkles,
+  MessageCircle,
 } from 'lucide-react';
-import { Community, Meeting, Member, AccessibilitySettings } from '../types';
+import { Community, Meeting, Member, AccessibilitySettings, FontScale } from '../types';
 import { getStoredSupabaseConfig } from '../lib/supabase';
 
 export type ActiveTab =
@@ -26,6 +27,7 @@ export type ActiveTab =
   | 'resident_pass'
   | 'admin_dashboard'
   | 'admin_members'
+  | 'admin_pass_cards'
   | 'live_screen'
   | 'report_a3'
   | 'qr_summary'
@@ -41,6 +43,7 @@ interface NavbarProps {
   currentMember: Member | null;
   onLogoutMember: () => void;
   onOpenSupabaseModal: () => void;
+  onOpenLineShare: () => void;
   accessibility: AccessibilitySettings;
   onUpdateAccessibility: (settings: Partial<AccessibilitySettings>) => void;
 }
@@ -55,19 +58,20 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentMember,
   onLogoutMember,
   onOpenSupabaseModal,
+  onOpenLineShare,
   accessibility,
   onUpdateAccessibility,
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const isCloudConnected = Boolean(getStoredSupabaseConfig().url && getStoredSupabaseConfig().key);
 
-  const toggleFontSize = () => {
-    const nextSize: Record<string, 'normal' | 'large' | 'extra-large'> = {
-      normal: 'large',
-      large: 'extra-large',
-      'extra-large': 'normal',
-    };
-    onUpdateAccessibility({ fontSize: nextSize[accessibility.fontSize] });
+  const FONT_SCALES: FontScale[] = [1.0, 1.2, 1.4, 1.6, 2.0];
+
+  const cycleFontScale = () => {
+    const currentScale = accessibility.fontScale || 1.0;
+    const currentIdx = FONT_SCALES.indexOf(currentScale);
+    const nextScale = FONT_SCALES[(currentIdx + 1) % FONT_SCALES.length];
+    onUpdateAccessibility({ fontScale: nextScale });
   };
 
   const toggleHighContrast = () => {
@@ -124,22 +128,47 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* 右側：字級縮放 + 抽屜選單按鈕 */}
+          {/* 右側：字級縮放 + LINE防跳出分享 + 抽屜選單按鈕 */}
           <div className="flex items-center gap-1.5 shrink-0">
-            {/* 字體快速縮放 (通用設計) */}
+            {/* 字體四段縮放按鈕：視覺顯示「大(20px) 小(12px)」，可循環放大 1.2x、1.4x、1.6x、2.0x */}
             <button
-              onClick={toggleFontSize}
-              title="切換字體大小"
-              className="flex h-8 items-center gap-0.5 rounded-lg border border-slate-200 px-2 text-[11px] font-bold text-slate-700 hover:bg-slate-100 active:scale-95 transition-transform"
+              onClick={cycleFontScale}
+              title={`切換字體大小 (目前 ${accessibility.fontScale || 1.0}x，點擊循環放大四段: 1.2x、1.4x、1.6x、2.0x)`}
+              aria-label={`字體大小切換 目前 ${accessibility.fontScale || 1.0} 倍`}
+              className={`flex h-8 items-center gap-1 rounded-lg border px-2 transition-all shadow-2xs active:scale-95 ${
+                (accessibility.fontScale || 1.0) > 1.0
+                  ? 'bg-indigo-50 border-indigo-400 text-indigo-900 ring-1 ring-indigo-300'
+                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
             >
-              <Type size={13} />
-              <span>
-                {accessibility.fontSize === 'normal'
-                  ? '標'
-                  : accessibility.fontSize === 'large'
-                  ? '大'
-                  : '特大'}
+              {/* 依指示使用「大(20px) 小(12px)」視覺文字標籤 */}
+              <span className="flex items-baseline leading-none select-none">
+                <span style={{ fontSize: '20px' }} className="font-black text-slate-900 leading-none">
+                  大
+                </span>
+                <span style={{ fontSize: '12px' }} className="font-bold text-slate-500 leading-none ml-0.5">
+                  小
+                </span>
               </span>
+              <span
+                className={`font-mono text-[10px] font-black px-1 rounded ${
+                  (accessibility.fontScale || 1.0) > 1.0
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {(accessibility.fontScale || 1.0) === 1.0 ? '1.0x' : `${accessibility.fontScale}x`}
+              </span>
+            </button>
+
+            {/* 方案 A：LINE 專用防跳出分享按鈕 */}
+            <button
+              onClick={onOpenLineShare}
+              title="LINE 專用防跳出分享 (方案 A 外部瀏覽器開啟)"
+              className="flex h-8 items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2 text-xs font-black text-emerald-800 hover:bg-emerald-100 active:scale-95 transition-all shadow-2xs"
+            >
+              <MessageCircle size={15} className="fill-emerald-600 text-emerald-600" />
+              <span className="hidden sm:inline">LINE 分享</span>
             </button>
 
             {/* 雲端資料庫燈號 (小藥丸) */}
@@ -200,6 +229,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               👥 Excel 住戶清冊與權重
+            </button>
+            <button
+              onClick={() => handleTabClick('admin_pass_cards')}
+              className={`rounded-xl px-3 py-1.5 flex items-center gap-1.5 ${
+                currentTab === 'admin_pass_cards'
+                  ? 'bg-purple-700 text-white'
+                  : 'bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200'
+              }`}
+            >
+              <span>🎟️ A4 憑證卡 (12格護貝列印)</span>
+              <span className="text-[10px] font-black bg-purple-900 text-white px-1 rounded">admin/admin1</span>
             </button>
             <button
               onClick={() => handleTabClick('live_screen')}
@@ -300,6 +340,26 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             </div>
 
+            {/* 方案 A：LINE 專用防跳出分享按鈕 (醒目置頂) */}
+            <button
+              onClick={() => {
+                setIsMobileMenuOpen(false);
+                onOpenLineShare();
+              }}
+              className="w-full mb-3 flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md active:scale-98 transition-all"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20">
+                  <MessageCircle size={20} className="fill-white text-white" />
+                </div>
+                <div className="text-left">
+                  <div className="text-xs font-black">📲 複製 LINE 防跳出分享連結 (方案 A)</div>
+                  <div className="text-[10px] text-emerald-100">帶有 ?openExternalBrowser=1，以 Safari / Chrome 開啟絕不跳出</div>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-emerald-200" />
+            </button>
+
             {/* 功能選單列表 (清晰條列、大觸控熱區) */}
             <div className="space-y-1.5 text-sm font-bold text-slate-800">
               <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-3 pt-1">
@@ -351,6 +411,24 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span>👥 Excel 493戶名冊與持分權重</span>
                 </div>
                 <ChevronRight size={16} className="text-slate-400" />
+              </button>
+
+              {/* 依要求：A4 12格法定電子憑證卡 (限定 admin / admin1) */}
+              <button
+                onClick={() => handleTabClick('admin_pass_cards')}
+                className="w-full flex items-center justify-between p-3 rounded-2xl bg-purple-50 hover:bg-purple-100 text-left border border-purple-200"
+              >
+                <div className="flex items-center gap-3">
+                  <QrIcon size={18} className="text-purple-700" />
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-black text-purple-950">🎟️ A4 區權人電子憑證卡 (12格護貝列印)</span>
+                      <span className="text-[9px] font-black bg-purple-600 text-white px-1.5 py-0.2 rounded">admin/admin1</span>
+                    </div>
+                    <div className="text-[10px] text-purple-700">大戶號 · 粗外邊框 · 2cm留邊粗虛線裁切</div>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-purple-400" />
               </button>
 
               <button

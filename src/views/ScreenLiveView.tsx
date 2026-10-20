@@ -1,13 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Community, Meeting, Topic } from '../types';
-import { getTopics, getMembers, calculateTopicStats } from '../lib/storage';
+import { getTopics, getMembers, calculateTopicStats, subscribeToSyncEvents } from '../lib/storage';
 import {
-  Monitor,
   CheckCircle2,
   AlertCircle,
-  Users,
-  ShieldCheck,
-  Building,
   KeyRound,
   Maximize2,
 } from 'lucide-react';
@@ -23,16 +19,33 @@ export const ScreenLiveView: React.FC<ScreenLiveViewProps> = ({
 }) => {
   const [topics, setTopics] = useState<Topic[]>(() => getTopics(meeting?.id));
   const [members, setMembers] = useState(() => getMembers(community.id));
-  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [lastUpdated, setLastUpdated] = useState(() => new Date());
 
-  // 每 2 秒微輪詢或監聽狀態刷新 (模擬開會現場 Realtime 即時跳動)
+  // 即時監聽全域事件 (投票、開議、結算 0 秒跳動) + 每 2.5 秒輪詢備援
   useEffect(() => {
-    const timer = setInterval(() => {
+    const refreshState = () => {
       setTopics(getTopics(meeting?.id));
       setMembers(getMembers(community.id));
       setLastUpdated(new Date());
-    }, 2500);
-    return () => clearInterval(timer);
+    };
+
+    const unsubscribe = subscribeToSyncEvents((event) => {
+      if (
+        event.type === 'VOTE_SUBMITTED' ||
+        event.type === 'TOPIC_UPDATED' ||
+        event.type === 'MEMBER_AUTHORIZED' ||
+        event.type === 'AUTH_REQUEST_APPROVED'
+      ) {
+        refreshState();
+      }
+    });
+
+    const timer = setInterval(refreshState, 2500);
+
+    return () => {
+      unsubscribe();
+      clearInterval(timer);
+    };
   }, [meeting, community]);
 
   const toggleFullscreen = () => {

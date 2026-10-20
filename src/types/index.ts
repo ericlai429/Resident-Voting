@@ -191,8 +191,11 @@ export interface OcrMeetingRecord {
 }
 
 // 通用設計視覺設定 (Universal Design Accessibility)
+export type FontScale = 1.0 | 1.2 | 1.4 | 1.6 | 2.0;
+
 export interface AccessibilitySettings {
   fontSize: 'normal' | 'large' | 'extra-large';
+  fontScale: FontScale;
   highContrast: boolean;
   hapticFeedback: boolean;
 }

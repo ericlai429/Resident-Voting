@@ -112,7 +112,7 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
       )) {
         // 從存儲獲取最新資料
         const freshMembers = getMembers(activeMeeting?.community_id);
-        const target = freshMembers.find(m => m.id === event.memberId || m.unit_no.toUpperCase() === targetUnit);
+        const target = freshMembers.find(m => m.id === event.memberId || isUnitMatch(m.unit_no, targetUnit));
         if (target) {
           const approvedMember: Member = {
             ...target,
@@ -136,6 +136,12 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
           }, 1200);
         }
       }
+
+      // 當管理員現場解除舊手機鎖定 (換機解綁)
+      if ((isMatchUnit || isMatchDevice) && event.type === 'MEMBER_DEVICE_UNLOCKED') {
+        setDeviceAlert(null);
+        setErrorMsg('');
+      }
     };
 
     const unsubscribe = subscribeToSyncEvents(handleSync);
@@ -150,7 +156,10 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
         const isPhoneMatchedNow = target.phone_last4 === phoneMismatchInfo.typedPhone;
         // 條件 B: 後台直接核准並綁定了本機 UUID
         const isDeviceBound = target.bound_device_token === currentDeviceUUID;
-        if (isPhoneMatchedNow || isDeviceBound) {
+        // 條件 C: 後台現場一鍵特權開通
+        const isAuthorizedNow = target.is_checked_in;
+
+        if (isPhoneMatchedNow || isDeviceBound || isAuthorizedNow) {
           const approvedMember: Member = {
             ...target,
             bound_device_token: currentDeviceUUID,

@@ -4,6 +4,7 @@ import {
   Meeting,
   Member,
   AccessibilitySettings,
+  FontScale,
 } from './types';
 import {
   ensureInitialData,
@@ -25,6 +26,8 @@ import { ScreenLiveView } from './views/ScreenLiveView';
 import { ReportA3View } from './views/ReportA3View';
 import { QrCodeSummaryView } from './views/QrCodeSummaryView';
 import { OcrScannerView } from './views/OcrScannerView';
+import { A4PassCardPrintView } from './views/A4PassCardPrintView';
+import { LineShareModal } from './components/LineShareModal';
 import { SupabaseConfigModal } from './components/SupabaseConfigModal';
 
 export function App() {
@@ -34,13 +37,74 @@ export function App() {
   const [activeMeeting, setActiveMeetingState] = useState<Meeting | null>(null);
   const [currentMember, setCurrentMemberState] = useState<Member | null>(null);
   const [showSupabaseModal, setShowSupabaseModal] = useState(false);
+  const [showLineShareModal, setShowLineShareModal] = useState(false);
 
   // 通用設計無障礙設定 (Universal Design Accessibility)
-  const [accessibility, setAccessibility] = useState<AccessibilitySettings>({
-    fontSize: 'normal',
-    highContrast: false,
-    hapticFeedback: true,
+  const [accessibility, setAccessibility] = useState<AccessibilitySettings>(() => {
+    let savedScale: FontScale = 1.0;
+    try {
+      const stored = localStorage.getItem('resident_font_scale');
+      if (stored) {
+        const val = parseFloat(stored) as FontScale;
+        if ([1.0, 1.2, 1.4, 1.6, 2.0].includes(val)) savedScale = val;
+      }
+    } catch {}
+    return {
+      fontSize: 'normal',
+      fontScale: savedScale,
+      highContrast: false,
+      hapticFeedback: true,
+    };
   });
+
+  // 全域字體縮放監聽：等比縮放全頁排版 (支援 1.2x, 1.4x, 1.6x, 2.0x)
+  useEffect(() => {
+    try {
+      localStorage.setItem('resident_font_scale', String(accessibility.fontScale));
+      if (typeof document !== 'undefined' && document.documentElement) {
+        (document.documentElement.style as any).zoom = accessibility.fontScale;
+      }
+    } catch (e) {
+      console.warn('Zoom scaling failed:', e);
+    }
+  }, [accessibility.fontScale]);
+
+  // 杜絕 LINE 內建瀏覽器頂部與底部邊界滑動跳出 (Touch Boundary Clamp)
+  useEffect(() => {
+    let startY = 0;
+    const rootEl = document.getElementById('root');
+    if (!rootEl) return;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      startY = e.touches[0].clientY;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      const currentY = e.touches[0].clientY;
+      const isAtTop = rootEl.scrollTop <= 0;
+      const isAtBottom = rootEl.scrollTop + rootEl.clientHeight >= rootEl.scrollHeight - 1;
+
+      // 在頂端繼續下拉 (避免觸發 LINE 下拉關閉 / 橡皮筋回彈)
+      if (isAtTop && currentY > startY) {
+        if (e.cancelable) e.preventDefault();
+      }
+      // 在底端繼續上滑 (避免觸發 LINE 上拉關閉)
+      if (isAtBottom && currentY < startY) {
+        if (e.cancelable) e.preventDefault();
+      }
+    };
+
+    rootEl.addEventListener('touchstart', handleTouchStart, { passive: true });
+    rootEl.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+    return () => {
+      rootEl.removeEventListener('touchstart', handleTouchStart);
+      rootEl.removeEventListener('touchmove', handleTouchMove);
+    };
+  }, []);
+
+  // 偵測是否在 LINE 內建瀏覽器中開啟
+  const isLineBrowser = typeof navigator !== 'undefined' && /Line\/|LIApp/i.test(navigator.userAgent || '');
 
   // 初始化資料載入
   const loadAppState = () => {
@@ -109,6 +173,26 @@ export function App() {
 
   return (
     <div className={`min-h-screen ${contrastClass} ${fontSizeClass} flex flex-col font-sans transition-colors duration-200`}>
+      {/* 若在 LINE 內建瀏覽器中開啟且尚未外開，顯示一鍵外開橫幅 (防滑動跳出) */}
+      {isLineBrowser && !window.location.search.includes('openExternalBrowser=1') && (
+        <div className="bg-emerald-600 text-white px-3 py-2 text-xs font-bold flex items-center justify-between shadow-md z-50 sticky top-0 no-print animate-fade-in">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="shrink-0 rounded-full bg-white/20 p-1">📲</span>
+            <span className="truncate">偵測到 LINE 內建瀏覽器，點擊切換至 Safari / Chrome 開啟可防滑動跳出！</span>
+          </div>
+          <button
+            onClick={() => {
+              const origin = window.location.origin;
+              const pathname = window.location.pathname;
+              window.location.href = `${origin}${pathname}?openExternalBrowser=1`;
+            }}
+            className="shrink-0 ml-2 rounded-lg bg-white px-2.5 py-1 text-xs font-black text-emerald-800 shadow-xs hover:bg-emerald-50 active:scale-95"
+          >
+            立即外開
+          </button>
+        </div>
+      )}
+
       {/* 頂部通用設計導覽與控制列 */}
       <Navbar
         currentTab={currentTab}
@@ -120,6 +204,7 @@ export function App() {
         currentMember={currentMember}
         onLogoutMember={handleLogoutMember}
         onOpenSupabaseModal={() => setShowSupabaseModal(true)}
+        onOpenLineShare={() => setShowLineShareModal(true)}
         accessibility={accessibility}
         onUpdateAccessibility={handleUpdateAccessibility}
       />
@@ -159,6 +244,8 @@ export function App() {
             meeting={activeMeeting}
             onRefreshData={loadAppState}
             onNavigateToScreen={() => setCurrentTab('live_screen')}
+            onNavigateToPassCards={() => setCurrentTab('admin_pass_cards')}
+            onOpenLineShare={() => setShowLineShareModal(true)}
           />
         )}
 
@@ -166,6 +253,15 @@ export function App() {
           <MemberManagement
             community={activeCommunity}
             onRefreshData={loadAppState}
+          />
+        )}
+
+        {/* 區權會法定電子憑證卡 (A4 12格護貝列印版 · 限定 admin/admin1) */}
+        {currentTab === 'admin_pass_cards' && activeCommunity && (
+          <A4PassCardPrintView
+            community={activeCommunity}
+            meeting={activeMeeting}
+            onBack={() => setCurrentTab('admin_dashboard')}
           />
         )}
 
@@ -201,6 +297,15 @@ export function App() {
         isOpen={showSupabaseModal}
         onClose={() => setShowSupabaseModal(false)}
         onConfigChanged={loadAppState}
+      />
+
+      {/* LINE 專用防跳出分享對話框 (方案 A) */}
+      <LineShareModal
+        isOpen={showLineShareModal}
+        onClose={() => setShowLineShareModal(false)}
+        communityName={activeCommunity?.name || '清淞社區'}
+        meetingTitle={activeMeeting?.title || '區權會'}
+        pinCode={activeMeeting?.pin_code}
       />
     </div>
   );

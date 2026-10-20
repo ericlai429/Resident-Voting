@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Member, Community } from '../types';
-import { getMembers, saveMembers, directAuthorizeMember, unlockMemberDevice } from '../lib/storage';
+import { getMembers, saveMembers, directAuthorizeMember, unlockMemberDevice, saveCommunity } from '../lib/storage';
 import {
   parseExcelFile,
   convertRowsToMembers,
@@ -79,11 +79,46 @@ export const MemberManagement: React.FC<MemberManagementProps> = ({
         community.id
       );
 
-      saveMembers(importedMembers);
-      setMembers(importedMembers);
+      // 保留該社區管理員與其他社區名冊，防止管理員被洗掉而無法登入
+      const allMembers = getMembers();
+      const otherMembers = allMembers.filter(m => m.community_id !== community.id);
+      const existingAdmin = allMembers.find(
+        m => m.community_id === community.id && (m.role === 'admin' || m.role === 'admin1')
+      );
+
+      const adminToKeep: Member = existingAdmin || {
+        id: `mem-admin-${community.id}`,
+        community_id: community.id,
+        unit_no: '管理委員會',
+        floor: 'Admin',
+        owner_name: '管委會主委',
+        phone_last4: '8888',
+        phone_full: '0988-888-888',
+        address: community.address,
+        area_ping: 0.0,
+        weight_ratio: 0.0,
+        role: 'admin',
+        is_checked_in: false,
+        reset_token: `ADMIN-PASS-${community.id}`,
+        created_at: new Date().toISOString(),
+      };
+
+      const finalMembersForCommunity = [adminToKeep, ...importedMembers];
+      saveMembers([...otherMembers, ...finalMembersForCommunity]);
+      setMembers(finalMembersForCommunity);
       setParseResult(null);
       setCustomMapping(null);
-      setSuccessMsg(`🎉 成功匯入 ${importedMembers.length} 筆住戶區權人清冊！已精準依各戶權狀計算持分權重。`);
+
+      // 同步更新社區總法定戶數與總持分坪數
+      const totalUnits = importedMembers.length;
+      const totalPing = Number(importedMembers.reduce((sum, m) => sum + m.area_ping, 0).toFixed(2));
+      saveCommunity({
+        ...community,
+        total_units: totalUnits,
+        total_area_ping: totalPing,
+      });
+
+      setSuccessMsg(`🎉 成功匯入 ${importedMembers.length} 筆住戶區權人清冊！已精準依各戶權狀計算持分權重，總坪數 ${totalPing} 坪已同步更新。`);
       onRefreshData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

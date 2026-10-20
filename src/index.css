@@ -5,11 +5,35 @@
     --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans TC", sans-serif;
   }
 
+  /* 徹底杜絕 LINE / iOS WebKit 頂部與底部橡皮筋回彈手勢跳出 (Triple Anti-Bounce Lock) */
+  html, body {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior-y: none;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
   body {
     font-family: var(--font-sans);
     background-color: #f8fafc;
     color: #0f172a;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  /* 內層獨立滾動容器，將所有滾動行為限制在 DOM 內，不觸發外層 window 視窗關閉手勢 */
+  #root {
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    overscroll-behavior: contain;
   }
 }
 
@@ -21,12 +45,22 @@
 
 @media print {
   @page {
-    size: A3 landscape;
-    margin: 10mm;
+    size: A4 portrait;
+    margin: 5mm;
+  }
+  html, body {
+    position: static !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+  #root {
+    position: static !important;
+    overflow: visible !important;
+    height: auto !important;
   }
   body {
-    background: white;
-    color: black;
+    background: white !important;
+    color: black !important;
   }
   .no-print {
     display: none !important;
