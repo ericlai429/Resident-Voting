@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Community,
   Meeting,
@@ -6,6 +6,8 @@ import {
   Member,
   TopicOption,
   TopicVoteType,
+  DeskAuthRequest,
+  DeskAuthSyncEvent,
 } from '../types';
 import {
   getTopics,
@@ -18,6 +20,13 @@ import {
   getMembers,
   updateMember,
   calculateTopicStats,
+  getDeskAuthRequests,
+  approveDeskAuthRequest,
+  rejectDeskAuthRequest,
+  directAuthorizeMember,
+  unlockMemberDevice,
+  updateMemberPhone,
+  subscribeToSyncEvents,
 } from '../lib/storage';
 import { UniversalButton } from '../components/UniversalButton';
 import {
@@ -34,6 +43,14 @@ import {
   Smartphone,
   Eye,
   FileCheck,
+  Radio,
+  Zap,
+  Check,
+  X,
+  Phone,
+  Clock,
+  Sparkles,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -70,6 +87,86 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // 重置住戶手機綁定搜尋
   const [searchMemberQuery, setSearchMemberQuery] = useState('');
   const [resetSuccessUnit, setResetSuccessUnit] = useState<string | null>(null);
+
+  // 大會服務台現場即時求助認證單
+  const [deskRequests, setDeskRequests] = useState<DeskAuthRequest[]>(() => getDeskAuthRequests(meeting?.id));
+  const [editingPhoneLast4, setEditingPhoneLast4] = useState<{ [memberId: string]: string }>({});
+  const [activeNotice, setActiveNotice] = useState<string | null>(null);
+
+  // 監聽全域同步事件 (當住戶送出求助或核准時即時更新)
+  useEffect(() => {
+    const handleSync = (event: DeskAuthSyncEvent) => {
+      if (
+        event.type === 'AUTH_REQUEST_CREATED' ||
+        event.type === 'AUTH_REQUEST_APPROVED' ||
+        event.type === 'AUTH_REQUEST_REJECTED' ||
+        event.type === 'MEMBER_AUTHORIZED' ||
+        event.type === 'MEMBER_DEVICE_UNLOCKED' ||
+        event.type === 'MEMBER_PHONE_UPDATED'
+      ) {
+        setDeskRequests(getDeskAuthRequests(meeting?.id));
+        onRefreshData();
+      }
+    };
+
+    const unsubscribe = subscribeToSyncEvents(handleSync);
+    return () => unsubscribe();
+  }, [meeting, onRefreshData]);
+
+  // 大會服務台核准求助單 (可選擇是否將手機號更正為住戶輸入之號碼)
+  const handleApproveDeskRequest = (req: DeskAuthRequest, updatePhone: boolean = true) => {
+    const newPhone = updatePhone ? req.input_phone_last4 : undefined;
+    const res = approveDeskAuthRequest(req.id, newPhone, '大會服務台(admin)');
+    if (res.success && res.member) {
+      setDeskRequests(getDeskAuthRequests(meeting?.id));
+      onRefreshData();
+      setActiveNotice(`✅ 已即時核准【${req.unit_no} ${req.owner_name}】！住戶手機畫面已 0 秒同步開通進入表決。`);
+      setTimeout(() => setActiveNotice(null), 5000);
+    }
+  };
+
+  // 大會服務台駁回求助單
+  const handleRejectDeskRequest = (req: DeskAuthRequest) => {
+    if (window.confirm(`確定要駁回戶號【${req.unit_no}】的現場核准申請嗎？`)) {
+      rejectDeskAuthRequest(req.id, '大會服務台查核不符');
+      setDeskRequests(getDeskAuthRequests(meeting?.id));
+      onRefreshData();
+    }
+  };
+
+  // 現場一鍵直接授權開通 (無條件核准)
+  const handleDirectAuthorize = (m: Member) => {
+    const res = directAuthorizeMember(m.id, { approvedBy: '大會服務台(admin)' });
+    if (res.success && res.member) {
+      onRefreshData();
+      setActiveNotice(`⚡ 已現場強制授權開通【${m.unit_no} ${m.owner_name}】！住戶端已即刻開通。`);
+      setTimeout(() => setActiveNotice(null), 5000);
+    }
+  };
+
+  // 現場更正手機末四碼
+  const handleUpdatePhone = (m: Member, phone: string) => {
+    if (!phone || phone.length !== 4) {
+      alert('請輸入 4 位數手機末碼！');
+      return;
+    }
+    const res = updateMemberPhone(m.id, phone);
+    if (res.success) {
+      onRefreshData();
+      setActiveNotice(`📱 已將【${m.unit_no}】登記手機更正為【${phone}】！住戶畫面已即時同步。`);
+      setTimeout(() => setActiveNotice(null), 5000);
+    }
+  };
+
+  // 現場解綁舊手機 (換機重置)
+  const handleUnlockDevice = (m: Member) => {
+    const res = unlockMemberDevice(m.id);
+    if (res.success) {
+      onRefreshData();
+      setActiveNotice(`🔓 已解除【${m.unit_no}】之手機裝置鎖定！住戶可更換新機登入。`);
+      setTimeout(() => setActiveNotice(null), 5000);
+    }
+  };
 
   // 重新生成當日 PIN 碼
   const handleRegeneratePin = () => {
@@ -277,59 +374,228 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </div>
 
-      {/* 現場忘記密碼 / 換機解鎖專區 (Reset Resident Binding) */}
-      <div className="rounded-3xl bg-white p-6 shadow-md border border-slate-200">
-        <div className="flex items-center justify-between mb-4">
+      {/* 大會服務台 · 現場身分認證與設備解綁專區 (Service Desk Authorization) */}
+      <div className="rounded-3xl bg-white p-6 shadow-md border border-slate-200 space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-2.5">
-            <Smartphone size={22} className="text-indigo-600" />
-            <h3 className="text-lg font-bold text-slate-900">
-              住戶換機解綁 / 忘記登入碼重置 (服務台專用)
-            </h3>
+            <div className="rounded-2xl bg-indigo-100 p-2 text-indigo-700">
+              <Smartphone size={24} />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                <span>大會服務台 · 現場身分人工認證與換機開通專區</span>
+                <span className="rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5">
+                  即時雙向連線
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500">
+                專供現場總幹事與管理員：住戶手機末四碼不符認證、更換手機解綁、即時授權開通
+              </p>
+            </div>
           </div>
-          <span className="text-xs text-slate-500">
-            住戶手機遺失、更換新機或遭鎖定時代為解鎖
-          </span>
+          {deskRequests.filter(r => r.status === 'pending').length > 0 && (
+            <span className="rounded-full bg-rose-500 text-white text-xs font-black px-3 py-1 animate-pulse">
+              🚨 {deskRequests.filter(r => r.status === 'pending').length} 位住戶正在手機前等待審核
+            </span>
+          )}
         </div>
 
-        <div className="flex gap-2 mb-3">
-          <input
-            type="text"
-            placeholder="請輸入住戶戶號 (例如：12F-15)、姓名或末四碼搜尋..."
-            value={searchMemberQuery}
-            onChange={(e) => setSearchMemberQuery(e.target.value)}
-            className="flex-1 rounded-2xl border border-slate-300 px-4 py-2.5 text-sm focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-          />
-        </div>
-
-        {resetSuccessUnit && (
-          <div className="mb-3 flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 font-bold">
-            <CheckCircle2 size={16} className="text-emerald-600" />
-            <span>戶號【{resetSuccessUnit}】已成功解除裝置綁定並發放新登入碼！住戶現在可在新手機重新登入。</span>
+        {/* 即時反饋通知條 */}
+        {activeNotice && (
+          <div className="flex items-center gap-2 rounded-2xl bg-emerald-50 border-2 border-emerald-300 p-4 text-xs font-black text-emerald-900 shadow-sm animate-fadeIn">
+            <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+            <span className="flex-1">{activeNotice}</span>
           </div>
         )}
 
-        {filteredMembers.length > 0 && (
-          <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-slate-50/50">
-            {filteredMembers.map((m) => (
-              <div key={m.id} className="flex items-center justify-between p-3 text-sm">
-                <div>
-                  <span className="font-bold text-slate-900 mr-2">{m.unit_no}</span>
-                  <span className="text-slate-700 font-medium mr-2">{m.owner_name}</span>
-                  <span className="text-xs text-slate-400 mr-2">末四碼: {m.phone_last4}</span>
-                  <span className="text-xs text-slate-500">
-                    狀態: {m.bound_device_token ? '已綁定裝置' : '未綁定'}
+        {/* 1. 待現場審核求助清單 (Real-time Pending Requests) */}
+        {deskRequests.filter(r => r.status === 'pending').length > 0 ? (
+          <div className="rounded-2xl border-2 border-amber-400 bg-amber-50/90 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="flex h-3 w-3 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+                </span>
+                <h4 className="text-sm font-black text-amber-950 flex items-center gap-1.5">
+                  <span>🚨 現場待人工認證求助清單</span>
+                  <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-black text-white">
+                    {deskRequests.filter(r => r.status === 'pending').length} 筆待審核
                   </span>
-                </div>
-                <button
-                  onClick={() => handleResetDevice(m)}
-                  className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-700 active:scale-95 transition-transform"
-                >
-                  一鍵解綁手機 / 重置
-                </button>
+                </h4>
               </div>
-            ))}
+              <span className="text-[11px] font-bold text-amber-800 animate-pulse">
+                📡 住戶手機在線等待核准訊號中...
+              </span>
+            </div>
+
+            <div className="space-y-2.5">
+              {deskRequests.filter(r => r.status === 'pending').map((req) => (
+                <div
+                  key={req.id}
+                  className="rounded-2xl border border-amber-200 bg-white p-4 shadow-xs space-y-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-base font-black text-indigo-900 bg-indigo-50 px-2.5 py-1 rounded-xl border border-indigo-200">
+                        {req.unit_no}
+                      </span>
+                      <span className="font-bold text-slate-900 text-sm">{req.owner_name}</span>
+                      <span className="text-slate-400">·</span>
+                      <span className="text-slate-600">
+                        名冊登記末四碼：<b className="font-mono text-slate-800">{req.registered_phone_last4}</b>
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      {new Date(req.requested_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                  </div>
+
+                  <div className="rounded-xl bg-amber-50 p-2.5 text-xs text-amber-950 flex flex-wrap items-center justify-between gap-2 border border-amber-200">
+                    <span>住戶手機剛輸入之末四碼：<b className="font-mono text-base font-black text-rose-600 ml-1">{req.input_phone_last4}</b></span>
+                    <span className="text-[10px] text-amber-800 font-mono">設備識別: {req.device_uuid.slice(0, 10)}***</span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {/* 一鍵特權開通 */}
+                    <button
+                      type="button"
+                      onClick={() => handleApproveDeskRequest(req, false)}
+                      className="flex-1 min-h-[40px] rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all"
+                    >
+                      <Zap size={16} />
+                      <span>一鍵現場特權開通 (無條件核准)</span>
+                    </button>
+
+                    {/* 更正手機為住戶輸入末四碼並開通 */}
+                    <button
+                      type="button"
+                      onClick={() => handleApproveDeskRequest(req, true)}
+                      className="flex-1 min-h-[40px] rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all"
+                    >
+                      <Check size={16} />
+                      <span>更正手機為【{req.input_phone_last4}】並開通</span>
+                    </button>
+
+                    {/* 駁回 */}
+                    <button
+                      type="button"
+                      onClick={() => handleRejectDeskRequest(req)}
+                      className="rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 px-3.5 py-1.5 text-xs font-bold transition-colors"
+                    >
+                      駁回
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 text-xs text-slate-500 flex items-center gap-2">
+            <Radio size={16} className="text-emerald-500 animate-pulse" />
+            <span>目前無等待審核之求助單。若住戶在登入時手機號碼不符，此處將以 0 秒即時跳出提醒！</span>
           </div>
         )}
+
+        {/* 2. 搜尋住戶戶號卡片與現場操作 */}
+        <div className="space-y-3 pt-2">
+          <label className="block text-sm font-bold text-slate-800">
+            🔍 任意戶號快速搜尋、現場強制授權與號碼更正
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="請輸入住戶戶號 (例如：12F-15)、所有權人姓名或末四碼搜尋..."
+              value={searchMemberQuery}
+              onChange={(e) => setSearchMemberQuery(e.target.value)}
+              className="w-full rounded-2xl border-2 border-slate-300 px-4 py-3 text-sm font-bold text-slate-900 focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+
+          {filteredMembers.length > 0 && (
+            <div className="space-y-2.5">
+              {filteredMembers.map((m) => {
+                const phoneInputVal = editingPhoneLast4[m.id] !== undefined ? editingPhoneLast4[m.id] : m.phone_last4;
+                return (
+                  <div
+                    key={m.id}
+                    className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 space-y-3 shadow-2xs"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-base font-black text-indigo-900 bg-white px-2.5 py-1 rounded-xl border border-slate-200 shadow-2xs">
+                          {m.unit_no}
+                        </span>
+                        <span className="font-bold text-slate-900">{m.owner_name}</span>
+                        <span className="text-xs text-slate-500 font-semibold">{m.area_ping} 坪</span>
+                        <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${
+                          m.is_checked_in ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                        }`}>
+                          {m.is_checked_in ? '已報到' : '未報到'}
+                        </span>
+                      </div>
+
+                      <div className="text-xs">
+                        {m.bound_device_token ? (
+                          <span className="text-indigo-600 font-bold flex items-center gap-1">
+                            <Smartphone size={14} />
+                            已鎖定設備 ({m.bound_device_token.slice(0, 8)}...)
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">尚未綁定手機</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 管理員認證與修改操作列 */}
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/60">
+                      {/* 1. 現場一鍵強制授權開通登入 */}
+                      <button
+                        type="button"
+                        onClick={() => handleDirectAuthorize(m)}
+                        className="rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-3.5 py-2 text-xs font-black flex items-center gap-1 shadow-xs transition-all"
+                      >
+                        <Zap size={15} />
+                        <span>一鍵現場特權開通</span>
+                      </button>
+
+                      {/* 2. 修改登記手機號碼 */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-slate-600">登記手機末4碼:</span>
+                        <input
+                          type="text"
+                          maxLength={4}
+                          value={phoneInputVal}
+                          onChange={(e) => setEditingPhoneLast4({ ...editingPhoneLast4, [m.id]: e.target.value.replace(/\D/g, '') })}
+                          className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-center font-mono text-sm font-black text-slate-900 focus:border-indigo-600 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleUpdatePhone(m, phoneInputVal)}
+                          className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 text-xs font-bold"
+                        >
+                          更正
+                        </button>
+                      </div>
+
+                      {/* 3. 解除手機鎖定 */}
+                      {m.bound_device_token && (
+                        <button
+                          type="button"
+                          onClick={() => handleUnlockDevice(m)}
+                          className="rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700 px-3 py-1.5 text-xs font-bold flex items-center gap-1 ml-auto"
+                        >
+                          <Unlock size={14} />
+                          <span>換機解綁</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 議案清冊與表決控制 (Topics CRUD) */}

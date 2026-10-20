@@ -3,7 +3,7 @@
 // 以「新北市淡水區淡金路21號 清淞社區」(493戶) 為主軸社區模型
 // ====================================================================
 
-import { Community, Meeting, Member, Topic, Vote, TopicVoteStats } from '../types';
+import { Community, Meeting, Member, Topic, Vote, TopicVoteStats, DeskAuthRequest, DeskAuthSyncEvent } from '../types';
 import { getSupabase } from './supabase';
 
 const STORAGE_KEY_COMMUNITIES = 'resident_voting_communities_v2';
@@ -15,6 +15,117 @@ const STORAGE_KEY_ACTIVE_COMMUNITY = 'resident_voting_active_comm_id_v2';
 const STORAGE_KEY_ACTIVE_MEETING = 'resident_voting_active_meeting_id_v2';
 const STORAGE_KEY_DEVICE_UUID = 'resident_voting_device_uuid';
 const STORAGE_KEY_CURRENT_MEMBER = 'resident_voting_current_member';
+const STORAGE_KEY_AUTH_REQUESTS = 'resident_voting_auth_requests_v2';
+const STORAGE_KEY_SYNC_PULSE = 'resident_voting_sync_pulse';
+
+// 建立跨分頁/跨視窗即時通訊通道 (BroadcastChannel)
+let syncChannel: BroadcastChannel | null = null;
+try {
+  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    syncChannel = new BroadcastChannel('resident_voting_sync_channel');
+  }
+} catch {
+  // BroadcastChannel 在部分受限環境可能不支援
+}
+
+// 發送全域即時同步事件 (同時支援 BroadcastChannel、LocalStorage Event、DOM CustomEvent 與 Supabase Realtime)
+export function broadcastSyncEvent(event: DeskAuthSyncEvent) {
+  // 1. BroadcastChannel 廣播
+  try {
+    syncChannel?.postMessage(event);
+  } catch (err) {
+    console.warn('BroadcastChannel 發送失敗:', err);
+  }
+
+  // 2. 本地 CustomEvent (同頁面即時觸發)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('resident_sync_event', { detail: event }));
+  }
+
+  // 3. LocalStorage 觸發跨 Tab / 跨視窗 storage 事件
+  try {
+    localStorage.setItem(STORAGE_KEY_SYNC_PULSE, JSON.stringify(event));
+  } catch (err) {
+    console.warn('LocalStorage pulse 失敗:', err);
+  }
+
+  // 4. Supabase 雲端 Realtime 廣播 (若有配置 Supabase)
+  const client = getSupabase();
+  if (client) {
+    try {
+      const channel = client.channel('desk_sync_room');
+      channel.send({
+        type: 'broadcast',
+        event: 'desk_sync',
+        payload: event,
+      }).catch(() => {});
+    } catch (err) {
+      console.warn('Supabase Realtime 廣播失敗:', err);
+    }
+  }
+}
+
+// 訂閱全域即時同步事件
+export function subscribeToSyncEvents(listener: (event: DeskAuthSyncEvent) => void): () => void {
+  // 1. BroadcastChannel 監聽
+  const handleBroadcast = (msg: MessageEvent) => {
+    if (msg.data && typeof msg.data === 'object' && msg.data.type) {
+      listener(msg.data as DeskAuthSyncEvent);
+    }
+  };
+  syncChannel?.addEventListener('message', handleBroadcast);
+
+  // 2. Local CustomEvent 監聽
+  const handleCustomEvent = (e: Event) => {
+    const custom = e as CustomEvent<DeskAuthSyncEvent>;
+    if (custom.detail) {
+      listener(custom.detail);
+    }
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resident_sync_event', handleCustomEvent);
+  }
+
+  // 3. Storage Event 跨分頁監聽
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === STORAGE_KEY_SYNC_PULSE && e.newValue) {
+      try {
+        const parsed = JSON.parse(e.newValue);
+        listener(parsed);
+      } catch {}
+    }
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', handleStorage);
+  }
+
+  // 4. Supabase Realtime 監聽 (若有雲端連線)
+  const client = getSupabase();
+  let supabaseChannel: any = null;
+  if (client) {
+    try {
+      supabaseChannel = client.channel('desk_sync_room')
+        .on('broadcast', { event: 'desk_sync' }, (payload: any) => {
+          if (payload.payload) {
+            listener(payload.payload);
+          }
+        })
+        .subscribe();
+    } catch {}
+  }
+
+  // 清除函式
+  return () => {
+    syncChannel?.removeEventListener('message', handleBroadcast);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resident_sync_event', handleCustomEvent);
+      window.removeEventListener('storage', handleStorage);
+    }
+    if (supabaseChannel && client) {
+      client.removeChannel(supabaseChannel);
+    }
+  };
+}
 
 export function getOrCreateDeviceUUID(): string {
   let uuid = localStorage.getItem(STORAGE_KEY_DEVICE_UUID);
@@ -377,6 +488,235 @@ export function updateMember(updated: Member) {
     list[idx] = updated;
     saveMembers(list);
   }
+}
+
+// --------------------------------------------------------------------
+// 大會服務台現場人工認證與設備換機管理 (Real-time Desk Authorization)
+// --------------------------------------------------------------------
+
+export function getDeskAuthRequests(meetingId?: string): DeskAuthRequest[] {
+  const raw = localStorage.getItem(STORAGE_KEY_AUTH_REQUESTS);
+  const list: DeskAuthRequest[] = raw ? JSON.parse(raw) : [];
+  let filtered = list;
+  if (meetingId) {
+    filtered = list.filter(r => !r.meeting_id || r.meeting_id === meetingId);
+  }
+  // 待審核優先，再依時間倒序
+  return filtered.sort((a, b) => {
+    if (a.status === 'pending' && b.status !== 'pending') return -1;
+    if (a.status !== 'pending' && b.status === 'pending') return 1;
+    return new Date(b.requested_at).getTime() - new Date(a.requested_at).getTime();
+  });
+}
+
+export function saveDeskAuthRequests(requests: DeskAuthRequest[]) {
+  localStorage.setItem(STORAGE_KEY_AUTH_REQUESTS, JSON.stringify(requests));
+}
+
+// 住戶手機端送出求助認證請求
+export function createDeskAuthRequest(params: Omit<DeskAuthRequest, 'id' | 'status' | 'requested_at'>): DeskAuthRequest {
+  const list = getDeskAuthRequests();
+  // 檢查是否已有該戶之 pending 請求，若有則直接更新輸入的手機號與時間
+  const existingIdx = list.findIndex(
+    r => r.unit_no.toLowerCase() === params.unit_no.toLowerCase() && r.status === 'pending'
+  );
+
+  let targetRequest: DeskAuthRequest;
+  if (existingIdx >= 0) {
+    targetRequest = {
+      ...list[existingIdx],
+      input_phone_last4: params.input_phone_last4,
+      device_uuid: params.device_uuid,
+      requested_at: new Date().toISOString(),
+    };
+    list[existingIdx] = targetRequest;
+  } else {
+    targetRequest = {
+      id: `AUTH-REQ-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+      status: 'pending',
+      requested_at: new Date().toISOString(),
+      ...params,
+    };
+    list.unshift(targetRequest);
+  }
+
+  saveDeskAuthRequests(list);
+
+  // 全域廣播：通知大會服務台管理員有新的求助請求
+  broadcastSyncEvent({
+    type: 'AUTH_REQUEST_CREATED',
+    timestamp: Date.now(),
+    requestId: targetRequest.id,
+    memberId: targetRequest.member_id,
+    unitNo: targetRequest.unit_no,
+    targetDeviceUuid: targetRequest.device_uuid,
+    newPhoneLast4: targetRequest.input_phone_last4,
+  });
+
+  return targetRequest;
+}
+
+// 大會服務台審核通過住戶求助
+export function approveDeskAuthRequest(
+  requestId: string,
+  newPhoneLast4?: string,
+  approvedBy: string = '大會服務台(admin)'
+): { success: boolean; member?: Member } {
+  const requests = getDeskAuthRequests();
+  const reqIdx = requests.findIndex(r => r.id === requestId);
+  if (reqIdx < 0) return { success: false };
+
+  const req = requests[reqIdx];
+  req.status = 'approved';
+  req.approved_at = new Date().toISOString();
+  req.approved_by = approvedBy;
+  if (newPhoneLast4) {
+    req.note = `管理員更正手機末四碼為【${newPhoneLast4}】並開通`;
+  } else {
+    req.note = `管理員現場確認身分無誤，一鍵特權開通`;
+  }
+  saveDeskAuthRequests(requests);
+
+  // 同步更新住戶名冊資料
+  const members = getMembers();
+  const memIdx = members.findIndex(m => m.id === req.member_id || m.unit_no.toLowerCase() === req.unit_no.toLowerCase());
+  if (memIdx >= 0) {
+    const mem = members[memIdx];
+    const updatedMember: Member = {
+      ...mem,
+      phone_last4: (newPhoneLast4 || req.input_phone_last4 || mem.phone_last4).trim(),
+      bound_device_token: req.device_uuid, // 直接綁定該求助手機的 Device UUID
+      is_checked_in: true,
+      check_in_time: mem.check_in_time || new Date().toISOString(),
+      reset_token: mem.reset_token || `TOKEN-${mem.unit_no}-${mem.phone_last4}`,
+    };
+    members[memIdx] = updatedMember;
+    saveMembers(members);
+
+    // 全域即時推播：告知該住戶手機「已現場審核通過」，手機將即刻自動登入進入表決
+    broadcastSyncEvent({
+      type: 'AUTH_REQUEST_APPROVED',
+      timestamp: Date.now(),
+      requestId,
+      memberId: updatedMember.id,
+      unitNo: updatedMember.unit_no,
+      targetDeviceUuid: req.device_uuid,
+      newPhoneLast4: updatedMember.phone_last4,
+      approvedBy,
+      payload: updatedMember,
+    });
+
+    return { success: true, member: updatedMember };
+  }
+
+  return { success: false };
+}
+
+// 大會服務台駁回住戶求助
+export function rejectDeskAuthRequest(requestId: string, reason?: string): boolean {
+  const requests = getDeskAuthRequests();
+  const req = requests.find(r => r.id === requestId);
+  if (!req) return false;
+
+  req.status = 'rejected';
+  req.approved_at = new Date().toISOString();
+  req.note = reason || '大會服務台核對身分不符，駁回申請';
+  saveDeskAuthRequests(requests);
+
+  broadcastSyncEvent({
+    type: 'AUTH_REQUEST_REJECTED',
+    timestamp: Date.now(),
+    requestId,
+    memberId: req.member_id,
+    unitNo: req.unit_no,
+    targetDeviceUuid: req.device_uuid,
+  });
+
+  return true;
+}
+
+// 後台管理員直接對任意住戶進行「現場直接認證開通 (免等待申請)」
+export function directAuthorizeMember(
+  memberId: string,
+  options?: { newPhoneLast4?: string; deviceUuid?: string; approvedBy?: string }
+): { success: boolean; member?: Member } {
+  const members = getMembers();
+  const memIdx = members.findIndex(m => m.id === memberId);
+  if (memIdx < 0) return { success: false };
+
+  const mem = members[memIdx];
+  const updatedMember: Member = {
+    ...mem,
+    phone_last4: (options?.newPhoneLast4 || mem.phone_last4).trim(),
+    bound_device_token: options?.deviceUuid || mem.bound_device_token,
+    is_checked_in: true,
+    check_in_time: mem.check_in_time || new Date().toISOString(),
+  };
+  members[memIdx] = updatedMember;
+  saveMembers(members);
+
+  // 全域廣播
+  broadcastSyncEvent({
+    type: 'MEMBER_AUTHORIZED',
+    timestamp: Date.now(),
+    memberId: updatedMember.id,
+    unitNo: updatedMember.unit_no,
+    targetDeviceUuid: options?.deviceUuid,
+    newPhoneLast4: updatedMember.phone_last4,
+    approvedBy: options?.approvedBy || '大會服務台(admin)',
+    payload: updatedMember,
+  });
+
+  return { success: true, member: updatedMember };
+}
+
+// 後台管理員一鍵解除住戶舊手機綁定 (換機重置)
+export function unlockMemberDevice(memberId: string): { success: boolean; member?: Member } {
+  const members = getMembers();
+  const memIdx = members.findIndex(m => m.id === memberId);
+  if (memIdx < 0) return { success: false };
+
+  const mem = members[memIdx];
+  const updatedMember: Member = {
+    ...mem,
+    bound_device_token: undefined,
+  };
+  members[memIdx] = updatedMember;
+  saveMembers(members);
+
+  broadcastSyncEvent({
+    type: 'MEMBER_DEVICE_UNLOCKED',
+    timestamp: Date.now(),
+    memberId: updatedMember.id,
+    unitNo: updatedMember.unit_no,
+  });
+
+  return { success: true, member: updatedMember };
+}
+
+// 後台更正住戶手機末四碼
+export function updateMemberPhone(memberId: string, newPhoneLast4: string): { success: boolean; member?: Member } {
+  const members = getMembers();
+  const memIdx = members.findIndex(m => m.id === memberId);
+  if (memIdx < 0) return { success: false };
+
+  const mem = members[memIdx];
+  const updatedMember: Member = {
+    ...mem,
+    phone_last4: newPhoneLast4.trim(),
+  };
+  members[memIdx] = updatedMember;
+  saveMembers(members);
+
+  broadcastSyncEvent({
+    type: 'MEMBER_PHONE_UPDATED',
+    timestamp: Date.now(),
+    memberId: updatedMember.id,
+    unitNo: updatedMember.unit_no,
+    newPhoneLast4: updatedMember.phone_last4,
+  });
+
+  return { success: true, member: updatedMember };
 }
 
 export function getCurrentMember(): Member | null {

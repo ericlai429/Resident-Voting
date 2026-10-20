@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Member, Community } from '../types';
-import { getMembers, saveMembers } from '../lib/storage';
+import { getMembers, saveMembers, directAuthorizeMember, unlockMemberDevice } from '../lib/storage';
 import {
   parseExcelFile,
   convertRowsToMembers,
@@ -20,6 +20,8 @@ import {
   Smartphone,
   Shield,
   FileCheck2,
+  Zap,
+  Unlock,
 } from 'lucide-react';
 
 interface MemberManagementProps {
@@ -93,6 +95,18 @@ export const MemberManagement: React.FC<MemberManagementProps> = ({
 
   const handleExportExcel = () => {
     exportMembersToExcel(members, community.name);
+  };
+
+  const handleAuthorizeMember = (m: Member) => {
+    directAuthorizeMember(m.id);
+    refreshList();
+    setSuccessMsg(`⚡ 已現場強制授權開通【${m.unit_no} ${m.owner_name}】！住戶手機端已 0 秒同步進入表決。`);
+  };
+
+  const handleUnlockMember = (m: Member) => {
+    unlockMemberDevice(m.id);
+    refreshList();
+    setSuccessMsg(`🔓 已解除【${m.unit_no}】之手機裝置鎖定！住戶可更換新機登入。`);
   };
 
   // 篩選列表
@@ -381,6 +395,7 @@ export const MemberManagement: React.FC<MemberManagementProps> = ({
                 <th className="px-4 py-3.5">報到狀態</th>
                 <th className="px-4 py-3.5">手機綁定</th>
                 <th className="px-4 py-3.5">身分角色</th>
+                <th className="px-4 py-3.5 text-center">服務台即時授權</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -435,6 +450,30 @@ export const MemberManagement: React.FC<MemberManagementProps> = ({
                     >
                       {m.role}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleAuthorizeMember(m)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1 text-xs font-bold text-white transition-colors shadow-2xs"
+                        title="現場一鍵強制授權開通"
+                      >
+                        <Zap size={12} />
+                        <span>開通</span>
+                      </button>
+                      {m.bound_device_token && (
+                        <button
+                          type="button"
+                          onClick={() => handleUnlockMember(m)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-rose-50 hover:bg-rose-100 px-2 py-1 text-xs font-bold text-rose-700 transition-colors"
+                          title="解除舊手機綁定 (換機重置)"
+                        >
+                          <Unlock size={12} />
+                          <span>解綁</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

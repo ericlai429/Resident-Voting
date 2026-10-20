@@ -50,6 +50,47 @@ export interface Member {
   created_at: string;
 }
 
+// 大會服務台現場人工驗證與授權求助單
+export interface DeskAuthRequest {
+  id: string;
+  community_id: string;
+  meeting_id?: string;
+  member_id: string;
+  unit_no: string;
+  owner_name: string;
+  registered_phone_last4: string;
+  input_phone_last4: string;
+  device_uuid: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requested_at: string;
+  approved_at?: string;
+  approved_by?: string;
+  note?: string;
+}
+
+// 跨視窗/跨設備即時廣播事件型別
+export type SyncEventType =
+  | 'AUTH_REQUEST_CREATED'
+  | 'AUTH_REQUEST_APPROVED'
+  | 'AUTH_REQUEST_REJECTED'
+  | 'MEMBER_AUTHORIZED'
+  | 'MEMBER_DEVICE_UNLOCKED'
+  | 'MEMBER_PHONE_UPDATED'
+  | 'TOPIC_UPDATED'
+  | 'VOTE_SUBMITTED';
+
+export interface DeskAuthSyncEvent {
+  type: SyncEventType;
+  timestamp: number;
+  memberId?: string;
+  unitNo?: string;
+  targetDeviceUuid?: string;
+  newPhoneLast4?: string;
+  approvedBy?: string;
+  requestId?: string;
+  payload?: any;
+}
+
 export type TopicVoteType = 'yes_no' | 'multiple_choice';
 export type TopicStatus = 'draft' | 'open' | 'closed';
 
