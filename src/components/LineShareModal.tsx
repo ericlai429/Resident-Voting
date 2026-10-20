@@ -80,8 +80,8 @@ export const LineShareModal: React.FC<LineShareModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in no-print">
-      <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fade-in no-print">
+      <div className="w-full max-w-lg max-h-[88vh] overflow-y-auto my-auto rounded-3xl bg-white shadow-2xl border border-slate-200">
         {/* 頂部 Header */}
         <div className="bg-gradient-to-r from-emerald-600 to-teal-700 p-5 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">

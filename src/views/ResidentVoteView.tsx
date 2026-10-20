@@ -297,10 +297,10 @@ export const ResidentVoteView: React.FC<ResidentVoteViewProps> = ({
         )}
       </div>
 
-      {/* 防手抖誤投 二度確認對話視窗 (Universal Confirmation Modal) */}
+      {/* 防手抖誤投 二度確認對話視窗 (Universal Confirmation Modal - 支援內層上下滑動，防止頂部超出框外) */}
       {confirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-fade-in">
-          <div className="relative w-full max-w-md rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border-4 border-indigo-400">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 p-3 sm:p-4 backdrop-blur-sm animate-fade-in flex items-center justify-center">
+          <div className="relative w-full max-w-md max-h-[88vh] overflow-y-auto rounded-3xl bg-white p-5 sm:p-7 shadow-2xl border-4 border-indigo-400 my-auto">
             <div className="mb-4 text-center">
               <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-3xl bg-indigo-100 text-indigo-700">
                 <AlertTriangle size={36} />

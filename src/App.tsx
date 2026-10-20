@@ -81,6 +81,12 @@ export function App() {
     };
 
     const handleTouchMove = (e: TouchEvent) => {
+      // 若觸控事件發生在彈窗、對話盒或有 overflow-y-auto 的子元素內，放行內部正常滾動
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest('.overflow-y-auto, [role="dialog"], .fixed')) {
+        return;
+      }
+
       const currentY = e.touches[0].clientY;
       const isAtTop = rootEl.scrollTop <= 0;
       const isAtBottom = rootEl.scrollTop + rootEl.clientHeight >= rootEl.scrollHeight - 1;

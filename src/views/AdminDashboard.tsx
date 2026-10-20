@@ -870,8 +870,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* 新增議案彈窗 */}
       {showAddTopicModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-2xl">
+        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center bg-black/75 p-3 sm:p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg max-h-[88vh] overflow-y-auto my-auto rounded-3xl bg-white p-5 sm:p-7 shadow-2xl">
             <h3 className="text-xl font-black text-slate-900 mb-4">
               📝 建立新的表決議案 (主委/總幹事提案)
             </h3>
@@ -972,8 +972,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* 新增多社區租戶彈窗 */}
       {showAddCommModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 sm:p-8 shadow-2xl">
+        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center bg-black/75 p-3 sm:p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md max-h-[88vh] overflow-y-auto my-auto rounded-3xl bg-white p-5 sm:p-7 shadow-2xl">
             <h3 className="text-xl font-black text-slate-900 mb-4">
               🏢 新增管委會社區 (Multi-Tenant)
             </h3>

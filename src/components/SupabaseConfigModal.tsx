@@ -60,8 +60,8 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-      <div className="relative w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center bg-black/75 p-3 sm:p-4 backdrop-blur-sm">
+      <div className="relative w-full max-w-lg max-h-[88vh] overflow-y-auto my-auto rounded-3xl bg-white p-6 shadow-2xl">
         <button
           onClick={onClose}
           className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
