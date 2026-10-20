@@ -143,7 +143,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <SunMoon size={18} />
           </button>
 
-          {/* SB大師 Supabase 狀態指示燈 */}
+          {/* Supabase 資料庫 狀態指示燈 */}
           <button
             onClick={onOpenSupabaseModal}
             title="Supabase 雲端資料庫設定"

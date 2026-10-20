@@ -46,7 +46,7 @@
 
 ---
 
-## 🧙‍♂️ SB大師 · Supabase 雲端後端串接
+## ⚡ Supabase 資料庫 · 雲端後端串接
 
 系統採用 **Local-First（離線優先） + Supabase 雲端動態同步** 雙層架構。未填寫金鑰前已預載清淞社區完整資料可供離線體驗；填入 Supabase 連線後自動無縫切換雲端同步！
 
@@ -61,7 +61,7 @@
    - 啟用 Realtime WebSocket 監聽。
 
 ### 步驟 2：串接 API Key
-- **方式一（免重新編譯）**：在前端頁面右上角點擊「SB大師」圖標，直接貼入您的 `Project URL` 與 `Publishable/Anon Key`，點擊「測試連線」成功後即可保存套用。
+- **方式一（免重新編譯）**：在前端頁面右上角點擊「Supabase 資料庫」圖標，直接貼入您的 `Project URL` 與 `Publishable/Anon Key`，點擊「測試連線」成功後即可保存套用。
 - **方式二（環境變數）**：複製 `.env.example` 為 `.env`：
   ```env
   VITE_SUPABASE_URL=https://your-project.supabase.co

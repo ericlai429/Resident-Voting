@@ -74,7 +74,7 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
             <Database size={28} />
           </div>
           <div>
-            <h3 className="text-xl font-bold text-slate-900">🧙‍♂️ SB大師 · Supabase 雲端設定</h3>
+            <h3 className="text-xl font-bold text-slate-900">⚡ Supabase 資料庫 · 雲端連線設定</h3>
             <p className="text-sm text-slate-500">PostgreSQL + Realtime 即時同步資料庫連線</p>
           </div>
         </div>

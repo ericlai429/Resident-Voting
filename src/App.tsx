@@ -192,7 +192,7 @@ export function App() {
         )}
       </main>
 
-      {/* SB大師 Supabase 設定對話框 */}
+      {/* Supabase 資料庫 設定對話框 */}
       <SupabaseConfigModal
         isOpen={showSupabaseModal}
         onClose={() => setShowSupabaseModal(false)}
