@@ -1,9 +1,23 @@
-import React, { useState } from 'react';
-import { LogIn, QrCode, AlertCircle, KeyRound, ShieldAlert, Sparkles, Building, Phone, Home } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import {
+  LogIn,
+  QrCode,
+  AlertCircle,
+  KeyRound,
+  ShieldAlert,
+  Sparkles,
+  Building,
+  Phone,
+  Home,
+  CheckCircle2,
+  Sliders,
+  Keyboard,
+} from 'lucide-react';
 import { Member, Meeting } from '../types';
-import { getMembers, updateMember, getOrCreateDeviceUUID, getTodayMidnightISO } from '../lib/storage';
+import { getMembers, updateMember, getOrCreateDeviceUUID } from '../lib/storage';
 import { UniversalButton } from '../components/UniversalButton';
 import { QrScannerModal } from '../components/QrScannerModal';
+import { UnitWheelPicker } from '../components/UnitWheelPicker';
 
 interface ResidentLoginViewProps {
   activeMeeting: Meeting | null;
@@ -16,22 +30,61 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
   onLoginSuccess,
   communityName,
 }) => {
-  const [unitNo, setUnitNo] = useState('');
-  const [floor, setFloor] = useState('');
+  // 模式切換：滾輪選擇 (預設) vs 鍵盤手動輸入
+  const [inputMode, setInputMode] = useState<'wheel' | 'manual'>('wheel');
+
+  // 大滾輪各軸狀態 (棟別 / 樓層 / 戶號 / 之幾)
+  const [wheelState, setWheelState] = useState({
+    block: '全區',
+    floor: '12F',
+    room: '15',
+    sub: '本號',
+  });
+
+  // 手動輸入文字
+  const [manualUnitNo, setManualUnitNo] = useState('');
+
   const [phoneLast4, setPhoneLast4] = useState('');
   const [pinCode, setPinCode] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [deviceAlert, setDeviceAlert] = useState<{ isLocked: boolean; unitNo?: string; boundDevice?: string } | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
 
-  // 執行一般表單登入
+  // 取得目前社區所有名冊
+  const members = useMemo(() => getMembers(activeMeeting?.community_id), [activeMeeting]);
+
+  // 組合滾輪產生的標準戶號字串
+  const computedUnitNo = useMemo(() => {
+    if (inputMode === 'manual') return manualUnitNo.trim();
+
+    const { block, floor, room, sub } = wheelState;
+    // 預設為「本號」則免去之幾
+    const subStr = sub === '本號' ? '' : sub;
+    const blockStr = block === '全區' ? '' : `${block}-`;
+
+    return `${blockStr}${floor}-${room}${subStr}`;
+  }, [inputMode, manualUnitNo, wheelState]);
+
+  // 即時動態匹配名冊中的住戶預覽 (即時回饋長輩，不怕選錯戶)
+  const matchedPreviewMember = useMemo(() => {
+    if (!computedUnitNo) return null;
+    const clean = computedUnitNo.toUpperCase();
+    return members.find(
+      (m) =>
+        m.unit_no.toUpperCase() === clean ||
+        m.unit_no.toUpperCase().includes(clean) ||
+        clean.includes(m.unit_no.toUpperCase())
+    ) || null;
+  }, [computedUnitNo, members]);
+
+  // 執行表單登入
   const handleFormLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setDeviceAlert(null);
 
-    if (!unitNo.trim()) {
-      setErrorMsg('請輸入您的棟別與戶號 (例如：A棟-08F-3)');
+    if (!computedUnitNo) {
+      setErrorMsg('請使用滾輪選取或輸入您的戶號');
       return;
     }
     if (!phoneLast4.trim() || phoneLast4.length !== 4) {
@@ -47,32 +100,29 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
         return;
       }
       if (pinCode.trim() !== activeMeeting.pin_code) {
-        setErrorMsg(`會議 PIN 碼不正確！請輸入開會現場公佈之 4 碼 PIN（非遠端隨意輸入）。`);
+        setErrorMsg(`會議 PIN 碼不正確！請輸入開會現場公佈之 4 碼 PIN。`);
         return;
       }
     }
 
-    // 在名冊中尋找該住戶
-    const members = getMembers(activeMeeting?.community_id);
-    const cleanUnit = unitNo.trim().toUpperCase();
-
-    const member = members.find(
+    // 在名冊中比對住戶
+    const member = matchedPreviewMember || members.find(
       (m) =>
-        m.unit_no.toUpperCase().includes(cleanUnit) ||
-        cleanUnit.includes(m.unit_no.toUpperCase())
+        m.unit_no.toUpperCase().includes(computedUnitNo.toUpperCase()) ||
+        computedUnitNo.toUpperCase().includes(m.unit_no.toUpperCase())
     );
 
     if (!member) {
-      setErrorMsg(`在名冊中查無戶號「${unitNo}」，請確認是否與權狀門牌或通知單一致。`);
+      setErrorMsg(`在名冊中查無戶號【${computedUnitNo}】，請核對是否選對棟別或樓層。`);
       return;
     }
 
     if (member.phone_last4 !== phoneLast4.trim()) {
-      setErrorMsg(`手機號碼末四碼不符！若您近期更換手機號碼，請洽管理台 (Admin) 辦理名冊更正。`);
+      setErrorMsg(`手機號碼末四碼不符！若您近期更換手機號碼，請洽大會服務台確認。`);
       return;
     }
 
-    // 檢查每隻手機綁定內碼 (Device Token)
+    // 檢查設備綁定 (Device Token)
     const currentDeviceUUID = getOrCreateDeviceUUID();
 
     if (member.bound_device_token && member.bound_device_token !== currentDeviceUUID) {
@@ -84,7 +134,7 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
       return;
     }
 
-    // 初次登入自動綁定本機特徵值，並標記自動報到
+    // 初次登入自動綁定本機特徵值，並標記已報到
     const updatedMember: Member = {
       ...member,
       bound_device_token: currentDeviceUUID,
@@ -103,14 +153,12 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
     setErrorMsg('');
     setDeviceAlert(null);
 
-    const members = getMembers(activeMeeting?.community_id);
     const matched = members.find(
       (m) => m.reset_token === decodedText.trim() || decodedText.includes(m.reset_token || '___')
     );
 
     if (matched) {
       const currentDeviceUUID = getOrCreateDeviceUUID();
-      // 專屬 QR 碼視為最高級別實體憑證，若換手機掃自己的憑證 QR 碼，系統允許重新覆蓋綁定
       const updated: Member = {
         ...matched,
         bound_device_token: currentDeviceUUID,
@@ -124,10 +172,20 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
     }
   };
 
-  // 快速測試用 Demo 填入
-  const handleQuickFill = (targetUnit: string, targetFloor: string, last4: string) => {
-    setUnitNo(targetUnit);
-    setFloor(targetFloor);
+  // 快捷測試用 Demo 填入
+  const handleQuickFill = (targetUnit: string, last4: string) => {
+    if (targetUnit.includes('-')) {
+      const parts = targetUnit.split('-');
+      if (parts.length === 2) {
+        setWheelState({
+          block: '全區',
+          floor: parts[0].includes('F') ? parts[0] : `${parts[0]}F`,
+          room: parts[1],
+          sub: '本號',
+        });
+      }
+    }
+    setManualUnitNo(targetUnit);
     setPhoneLast4(last4);
     if (activeMeeting) {
       setPinCode(activeMeeting.pin_code);
@@ -137,65 +195,58 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
   };
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-6 sm:py-10">
+    <div className="mx-auto max-w-md px-3 py-4 sm:py-8">
       {/* 頂部社區大會標題 */}
-      <div className="text-center mb-6">
-        <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 border border-indigo-200 px-4 py-1.5 text-sm font-bold text-indigo-700 mb-3">
-          <Building size={16} />
+      <div className="text-center mb-5">
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 border border-indigo-200 px-3.5 py-1 text-xs font-bold text-indigo-700 mb-2">
+          <Building size={14} />
           <span>{communityName}</span>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+        <h1 className="text-2xl font-black text-slate-900 tracking-tight">
           區分所有權人手機線上表決
         </h1>
-        <p className="mt-2 text-sm sm:text-base text-slate-600">
-          現場掃碼登入 · 專有持分法定權重 · 雙重防弊驗證
+        <p className="mt-1 text-xs sm:text-sm text-slate-600">
+          大滾輪直覺選戶 · 專有坪數法定權重 · 現場雙重防弊
         </p>
       </div>
 
-      {/* 掃描個人專屬 QR 碼快速通關按鈕 (Universal Big Button) */}
-      <div className="mb-6">
+      {/* 掃描個人專屬 QR 碼快速通關按鈕 */}
+      <div className="mb-5">
         <UniversalButton
           variant="outline"
           size="lg"
-          className="w-full border-2 border-indigo-400 bg-indigo-50/50 hover:bg-indigo-100 text-indigo-900 shadow-sm"
+          className="w-full border-2 border-indigo-400 bg-indigo-50/60 hover:bg-indigo-100 text-indigo-950 shadow-xs"
           onClick={() => setIsScannerOpen(true)}
-          icon={<QrCode size={26} className="text-indigo-600" />}
+          icon={<QrCode size={24} className="text-indigo-600" />}
         >
-          📷 掃描個人專屬登入 QR 碼 (免打字)
+          📷 掃描個人專屬憑證 QR 碼 (免打字)
         </UniversalButton>
-        <p className="mt-1.5 text-center text-xs text-slate-500">
-          曾保存過專屬憑證 QR 碼者，直接掃碼即可秒速回復身分
-        </p>
       </div>
 
-      <div className="relative my-6 flex items-center justify-center">
+      <div className="relative my-5 flex items-center justify-center">
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-slate-200" />
         </div>
-        <span className="relative bg-slate-50 px-4 text-xs font-bold text-slate-400 uppercase">
-          或手動輸入資料驗證
+        <span className="relative bg-slate-50 px-3 text-[11px] font-bold text-slate-400 uppercase">
+          或手動選取戶別登入
         </span>
       </div>
 
-      {/* 裝置衝突嚴格警示 */}
+      {/* 裝置衝突警示 */}
       {deviceAlert?.isLocked && (
-        <div className="mb-6 rounded-3xl border-2 border-rose-300 bg-rose-50 p-5 shadow-md">
-          <div className="flex items-start gap-3">
-            <div className="rounded-2xl bg-rose-200 p-2 text-rose-800">
-              <ShieldAlert size={28} />
+        <div className="mb-5 rounded-2xl border-2 border-rose-300 bg-rose-50 p-4 shadow-sm">
+          <div className="flex items-start gap-2.5">
+            <div className="rounded-xl bg-rose-200 p-1.5 text-rose-800 shrink-0">
+              <ShieldAlert size={22} />
             </div>
-            <div className="flex-1">
-              <h3 className="text-lg font-bold text-rose-900">
+            <div className="flex-1 text-xs text-rose-900">
+              <h3 className="font-bold text-sm">
                 ⚠️ 此戶號已在其他手機綁定登入！
               </h3>
-              <p className="mt-1 text-sm text-rose-800 leading-relaxed">
-                戶號【{deviceAlert.unitNo}】已綁定於其他裝置（特徵：{deviceAlert.boundDevice}）。
-                為防止未經授權之他人代投或重複投票，系統已啟動防盜投防護機制。
+              <p className="mt-1 leading-relaxed">
+                戶號【{deviceAlert.unitNo}】已綁定於其他裝置。
+                為防止未經授權之代投，請洽大會服務台 / 總幹事驗證身分解綁重置。
               </p>
-              <div className="mt-3 rounded-xl bg-white/80 p-3 text-xs text-slate-700 border border-rose-200">
-                💡 <span className="font-bold">現場解決方式：</span>
-                請親自攜帶身分證件洽大會主席台 / 總幹事（Admin1），在管理者後台點擊「解除綁定 / 產生臨時重置碼」，或使用您手機保存的「專屬 QR 憑證」重新覆蓋登入。
-              </div>
             </div>
           </div>
         </div>
@@ -203,35 +254,92 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
 
       {/* 錯誤提示 */}
       {errorMsg && (
-        <div className="mb-6 flex items-center gap-3 rounded-2xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900">
-          <AlertCircle size={22} className="text-amber-600 flex-shrink-0" />
-          <span className="font-medium">{errorMsg}</span>
+        <div className="mb-5 flex items-center gap-2 rounded-2xl bg-amber-50 border border-amber-200 p-3.5 text-xs text-amber-900">
+          <AlertCircle size={20} className="text-amber-600 shrink-0" />
+          <span className="font-semibold">{errorMsg}</span>
         </div>
       )}
 
-      {/* 登入表單 (通用設計：高對比、大間距、大輸入框) */}
-      <form onSubmit={handleFormLogin} className="rounded-3xl bg-white p-6 sm:p-8 shadow-xl border border-slate-100 space-y-5">
+      {/* 登入表單 */}
+      <form onSubmit={handleFormLogin} className="rounded-3xl bg-white p-5 sm:p-6 shadow-xl border border-slate-200 space-y-4">
+        {/* 戶別選擇區塊 (大滾輪切換) */}
         <div>
-          <label className="block text-base font-bold text-slate-800 mb-2 flex items-center gap-1.5">
-            <Home size={18} className="text-indigo-600" />
-            <span>棟別與戶號</span>
-            <span className="text-xs text-slate-400 font-normal">(例: A棟-08F-3)</span>
-          </label>
-          <input
-            type="text"
-            required
-            value={unitNo}
-            onChange={(e) => setUnitNo(e.target.value)}
-            placeholder="請輸入棟別或戶號 (例如：A棟-08F-3)"
-            className="w-full min-h-[56px] rounded-2xl border-2 border-slate-200 px-4 text-lg font-medium text-slate-900 focus:border-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-100"
-          />
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+              <Home size={17} className="text-indigo-600" />
+              <span>選取棟別與戶號</span>
+            </label>
+
+            {/* 切換滾輪 / 鍵盤手動輸入 */}
+            <button
+              type="button"
+              onClick={() => setInputMode(inputMode === 'wheel' ? 'manual' : 'wheel')}
+              className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-2 py-1 rounded-lg"
+            >
+              {inputMode === 'wheel' ? (
+                <>
+                  <Keyboard size={13} />
+                  <span>切換為鍵盤打字</span>
+                </>
+              ) : (
+                <>
+                  <Sliders size={13} />
+                  <span>切換為大滾輪選擇</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {inputMode === 'wheel' ? (
+            <UnitWheelPicker
+              block={wheelState.block}
+              floor={wheelState.floor}
+              room={wheelState.room}
+              sub={wheelState.sub}
+              onChange={setWheelState}
+            />
+          ) : (
+            <input
+              type="text"
+              required
+              value={manualUnitNo}
+              onChange={(e) => setManualUnitNo(e.target.value)}
+              placeholder="例如：12F-15 或 A棟-08F-3"
+              className="w-full min-h-[52px] rounded-2xl border-2 border-slate-300 px-4 text-base font-bold text-slate-900 focus:border-indigo-600 focus:outline-none"
+            />
+          )}
+
+          {/* 滾輪目前選定之戶別與名冊即時預覽 */}
+          <div className="mt-2.5 rounded-xl bg-slate-50 border border-slate-200 p-2.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-semibold">目前選定戶別：</span>
+              <span className="font-mono text-base font-black text-indigo-900">
+                【{computedUnitNo}】
+              </span>
+            </div>
+
+            {matchedPreviewMember ? (
+              <div className="mt-1.5 pt-1.5 border-t border-slate-200 flex items-center justify-between text-[11px] text-emerald-800 font-bold">
+                <span className="flex items-center gap-1">
+                  <CheckCircle2 size={13} className="text-emerald-600" />
+                  <span>名冊已確認：{matchedPreviewMember.owner_name}</span>
+                </span>
+                <span>持分 {matchedPreviewMember.area_ping} 坪</span>
+              </div>
+            ) : (
+              <div className="mt-1.5 pt-1.5 border-t border-slate-200 text-[10px] text-amber-700 font-semibold">
+                ℹ️ 滾動選擇上方各軸，預設「本號」則自動省略之幾
+              </div>
+            )}
+          </div>
         </div>
 
+        {/* 手機末四碼 */}
         <div>
-          <label className="block text-base font-bold text-slate-800 mb-2 flex items-center gap-1.5">
-            <Phone size={18} className="text-indigo-600" />
+          <label className="block text-sm font-black text-slate-900 mb-1.5 flex items-center gap-1.5">
+            <Phone size={17} className="text-indigo-600" />
             <span>手機號碼末四碼</span>
-            <span className="text-xs text-slate-400 font-normal">(4位數字)</span>
+            <span className="text-[11px] text-slate-400 font-normal">(4位數字)</span>
           </label>
           <input
             type="text"
@@ -240,19 +348,20 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
             inputMode="numeric"
             value={phoneLast4}
             onChange={(e) => setPhoneLast4(e.target.value.replace(/\D/g, ''))}
-            placeholder="例如：9988"
-            className="w-full min-h-[56px] rounded-2xl border-2 border-slate-200 px-4 text-xl font-bold tracking-widest text-slate-900 focus:border-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-100"
+            placeholder="請輸入登記手機末四碼"
+            className="w-full min-h-[52px] rounded-2xl border-2 border-slate-200 px-4 text-xl font-black tracking-widest text-slate-900 focus:border-indigo-600 focus:outline-none focus:ring-3 focus:ring-indigo-100"
           />
         </div>
 
+        {/* 現場當日 4 碼 PIN */}
         <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-base font-bold text-slate-800 flex items-center gap-1.5">
-              <KeyRound size={18} className="text-amber-600" />
-              <span>當日會議 4 位數 PIN 碼</span>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+              <KeyRound size={17} className="text-amber-600" />
+              <span>開會現場 4 位數 PIN 碼</span>
             </label>
-            <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md font-semibold">
-              防止遠端灌票
+            <span className="text-[10px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded font-bold">
+              現場公布 · 防遠端灌票
             </span>
           </div>
           <input
@@ -262,47 +371,44 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
             inputMode="numeric"
             value={pinCode}
             onChange={(e) => setPinCode(e.target.value.replace(/\D/g, ''))}
-            placeholder="開會現場大螢幕公布之 4 碼"
-            className="w-full min-h-[56px] rounded-2xl border-2 border-amber-300 bg-amber-50/30 px-4 text-xl font-bold tracking-widest text-amber-950 focus:border-amber-600 focus:outline-none focus:ring-4 focus:ring-amber-100"
+            placeholder="請輸入大螢幕公布之 4 位數 PIN"
+            className="w-full min-h-[52px] rounded-2xl border-2 border-amber-300 bg-amber-50/30 px-4 text-xl font-black tracking-widest text-amber-950 focus:border-amber-600 focus:outline-none focus:ring-3 focus:ring-amber-100"
           />
-          <p className="mt-1 text-xs text-slate-500">
-            由開會現場主席宣布，於當日 23:59 自動失效
-          </p>
         </div>
 
         <UniversalButton
           type="submit"
           variant="primary"
           size="xl"
-          className="w-full mt-2"
-          icon={<LogIn size={24} />}
+          className="w-full mt-1"
+          icon={<LogIn size={22} />}
         >
-          驗證身分並進入表決
+          確認身分 · 進入線上表決
         </UniversalButton>
       </form>
 
-      {/* 快捷展示快速填入 (方便測試) */}
-      <div className="mt-8 rounded-2xl border border-dashed border-slate-300 bg-slate-100/60 p-4">
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-600 mb-2">
-          <Sparkles size={16} className="text-indigo-600" />
-          <span>現場測試快捷示範帳號 (點擊帶入)</span>
+      {/* 快捷示範測試 */}
+      <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-100/60 p-3.5">
+        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 mb-2">
+          <Sparkles size={14} className="text-indigo-600" />
+          <span>現場示範住戶快速代入測試 (點擊自動滾輪定位)</span>
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs">
           <button
             type="button"
-            onClick={() => handleQuickFill('A棟-08F-3', '8F', '9988')}
-            className="rounded-xl bg-white p-2.5 text-left font-semibold text-slate-700 shadow-2xs hover:border-indigo-400 hover:bg-indigo-50 border border-slate-200"
+            onClick={() => handleQuickFill('12F-15', '9988')}
+            className="rounded-xl bg-white p-2 text-left font-semibold text-slate-700 shadow-2xs hover:border-indigo-400 hover:bg-indigo-50 border border-slate-200"
           >
-            <span className="block text-indigo-700 font-bold">一般住戶 王小明</span>
-            <span className="text-slate-500">A棟-08F-3 (末4碼 9988)</span>
+            <span className="block text-indigo-700 font-bold">12F-15 王小明</span>
+            <span className="text-slate-500 text-[10px]">末4碼: 9988 (16.5坪)</span>
           </button>
           <button
             type="button"
-            onClick={() => handleQuickFill('A棟-15F-1', '15F', '5678')}
-            className="rounded-xl bg-white p-2.5 text-left font-semibold text-slate-700 shadow-2xs hover:border-indigo-400 hover:bg-indigo-50 border border-slate-200"
+            onClick={() => handleQuickFill('26F-08', '5678')}
+            className="rounded-xl bg-white p-2 text-left font-semibold text-slate-700 shadow-2xs hover:border-indigo-400 hover:bg-indigo-50 border border-slate-200"
           >
-            <span className="block text-indigo-700 font-bold">管委會主委 陳志明</span>
-            <span className="text-slate-500">A棟-15F-1 (末4碼 5678)</span>
+            <span className="block text-indigo-700 font-bold">26F-08 張主委</span>
+            <span className="text-slate-500 text-[10px]">末4碼: 5678 (38.6坪)</span>
           </button>
         </div>
       </div>
