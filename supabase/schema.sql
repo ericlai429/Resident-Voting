@@ -107,6 +107,26 @@ CREATE TABLE IF NOT EXISTS public.votes (
 );
 
 -- --------------------------------------------------------------------
+-- 7. 大會服務台現場認證求助表 (Desk Auth Requests - 即時身分審核)
+-- --------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.desk_auth_requests (
+    id VARCHAR(100) PRIMARY KEY,
+    community_id UUID NOT NULL REFERENCES public.communities(id) ON DELETE CASCADE,
+    meeting_id UUID REFERENCES public.meetings(id) ON DELETE CASCADE,
+    member_id UUID REFERENCES public.members(id) ON DELETE CASCADE,
+    unit_no VARCHAR(50) NOT NULL,
+    owner_name VARCHAR(100) NOT NULL,
+    registered_phone_last4 VARCHAR(4) NOT NULL,
+    input_phone_last4 VARCHAR(4) NOT NULL,
+    device_uuid VARCHAR(255) NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending',             -- pending, approved, rejected
+    requested_at TIMESTAMPTZ DEFAULT NOW(),
+    approved_at TIMESTAMPTZ,
+    approved_by VARCHAR(100),
+    note TEXT
+);
+
+-- --------------------------------------------------------------------
 -- 7. 索引建立 (提高 400+ 住戶現場高併發查詢效能)
 -- --------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_members_comm_unit ON public.members(community_id, unit_no);
@@ -232,3 +252,10 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.meetings;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.topics;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.votes;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.members;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.desk_auth_requests;
+
+-- 啟用服務台求助表 RLS 與公開存取規則
+ALTER TABLE public.desk_auth_requests ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "允許公開建立求助請求" ON public.desk_auth_requests FOR INSERT WITH CHECK (true);
+CREATE POLICY "允許公開讀取求助請求" ON public.desk_auth_requests FOR SELECT USING (true);
+CREATE POLICY "允許管理員更新求助請求" ON public.desk_auth_requests FOR UPDATE USING (true);
