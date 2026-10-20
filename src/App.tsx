@@ -38,6 +38,7 @@ export function App() {
   const [currentMember, setCurrentMemberState] = useState<Member | null>(null);
   const [showSupabaseModal, setShowSupabaseModal] = useState(false);
   const [showLineShareModal, setShowLineShareModal] = useState(false);
+  const [showLineBanner, setShowLineBanner] = useState(true);
 
   // 通用設計無障礙設定 (Universal Design Accessibility)
   const [accessibility, setAccessibility] = useState<AccessibilitySettings>(() => {
@@ -57,15 +58,15 @@ export function App() {
     };
   });
 
-  // 全域字體縮放監聽：等比縮放全頁排版 (支援 1.2x, 1.4x, 1.6x, 2.0x)
+  // 確保根節點 zoom 為 1，防止頂部功能列與整體視窗在切換字級時被放大擠壓變形
   useEffect(() => {
     try {
       localStorage.setItem('resident_font_scale', String(accessibility.fontScale));
       if (typeof document !== 'undefined' && document.documentElement) {
-        (document.documentElement.style as any).zoom = accessibility.fontScale;
+        (document.documentElement.style as any).zoom = '1';
       }
     } catch (e) {
-      console.warn('Zoom scaling failed:', e);
+      console.warn('Zoom reset error:', e);
     }
   }, [accessibility.fontScale]);
 
@@ -173,44 +174,62 @@ export function App() {
 
   return (
     <div className={`min-h-screen ${contrastClass} ${fontSizeClass} flex flex-col font-sans transition-colors duration-200`}>
-      {/* 若在 LINE 內建瀏覽器中開啟且尚未外開，顯示一鍵外開橫幅 (防滑動跳出) */}
-      {isLineBrowser && !window.location.search.includes('openExternalBrowser=1') && (
-        <div className="bg-emerald-600 text-white px-3 py-2 text-xs font-bold flex items-center justify-between shadow-md z-50 sticky top-0 no-print animate-fade-in">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="shrink-0 rounded-full bg-white/20 p-1">📲</span>
-            <span className="truncate">偵測到 LINE 內建瀏覽器，點擊切換至 Safari / Chrome 開啟可防滑動跳出！</span>
+      {/* 頂部固定置頂區塊：包含 LINE 外開提示與主導覽列，統一為單一 sticky 容器，滑動時一體釘選，絕不互相遮擋 */}
+      <div className="sticky top-0 z-40 w-full no-print">
+        {/* LINE 內建瀏覽器外開提醒橫幅 (支援一鍵關閉，滑動時與導覽列一體固定不重疊) */}
+        {showLineBanner && isLineBrowser && !window.location.search.includes('openExternalBrowser=1') && (
+          <div className="bg-emerald-600 text-white px-2.5 py-1.5 text-xs font-bold flex items-center justify-between border-b border-emerald-700 shadow-xs">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="shrink-0 text-xs">📲</span>
+              <span className="truncate text-[11px] sm:text-xs">LINE 瀏覽器模式 · 建議切換至 Safari / Chrome 開啟</span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0 ml-2">
+              <button
+                onClick={() => {
+                  const origin = window.location.origin;
+                  const pathname = window.location.pathname;
+                  window.location.href = `${origin}${pathname}?openExternalBrowser=1`;
+                }}
+                className="rounded-md bg-white px-2 py-0.5 text-[11px] font-black text-emerald-800 shadow-2xs hover:bg-emerald-50 active:scale-95"
+              >
+                立即外開
+              </button>
+              <button
+                onClick={() => setShowLineBanner(false)}
+                className="rounded p-0.5 text-emerald-100 hover:text-white hover:bg-emerald-700/60 leading-none text-xs ml-0.5"
+                title="關閉提示"
+                aria-label="關閉"
+              >
+                ✕
+              </button>
+            </div>
           </div>
-          <button
-            onClick={() => {
-              const origin = window.location.origin;
-              const pathname = window.location.pathname;
-              window.location.href = `${origin}${pathname}?openExternalBrowser=1`;
-            }}
-            className="shrink-0 ml-2 rounded-lg bg-white px-2.5 py-1 text-xs font-black text-emerald-800 shadow-xs hover:bg-emerald-50 active:scale-95"
-          >
-            立即外開
-          </button>
-        </div>
-      )}
+        )}
 
-      {/* 頂部通用設計導覽與控制列 */}
-      <Navbar
-        currentTab={currentTab}
-        onSelectTab={setCurrentTab}
-        communities={communities}
-        activeCommunity={activeCommunity}
-        onSelectCommunity={handleSelectCommunity}
-        activeMeeting={activeMeeting}
-        currentMember={currentMember}
-        onLogoutMember={handleLogoutMember}
-        onOpenSupabaseModal={() => setShowSupabaseModal(true)}
-        onOpenLineShare={() => setShowLineShareModal(true)}
-        accessibility={accessibility}
-        onUpdateAccessibility={handleUpdateAccessibility}
-      />
+        {/* 頂部通用設計導覽與控制列 */}
+        <Navbar
+          currentTab={currentTab}
+          onSelectTab={setCurrentTab}
+          communities={communities}
+          activeCommunity={activeCommunity}
+          onSelectCommunity={handleSelectCommunity}
+          activeMeeting={activeMeeting}
+          currentMember={currentMember}
+          onLogoutMember={handleLogoutMember}
+          onOpenSupabaseModal={() => setShowSupabaseModal(true)}
+          onOpenLineShare={() => setShowLineShareModal(true)}
+          accessibility={accessibility}
+          onUpdateAccessibility={handleUpdateAccessibility}
+        />
+      </div>
 
-      {/* 主工作區視圖切換 (iPhone 12 自適應與底部留白) */}
-      <main className="flex-1 pb-24 md:pb-12">
+      {/* 主工作區視圖切換 (支援字體四段縮放 1.2x, 1.4x, 1.6x, 2.0x，頂部功能按鈕不放大、不跑版) */}
+      <main
+        className="flex-1 pb-24 md:pb-12 w-full overflow-x-hidden"
+        style={{
+          zoom: accessibility.fontScale || 1.0,
+        }}
+      >
         {currentTab === 'resident_vote' && (
           currentMember && activeCommunity ? (
             <ResidentVoteView

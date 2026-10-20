@@ -85,22 +85,22 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <>
-      {/* 頂部輕量化 Header (專為 iPhone 12 390px 完美緊湊適配) */}
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-xs no-print">
-        <div className="mx-auto flex max-w-md md:max-w-6xl items-center justify-between px-3 py-2.5">
+      {/* 頂部輕量化 Header (固定於父容器頂部，不隨切換大小放大，專為手機 360px-390px 完美緊湊適配) */}
+      <header className="w-full border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-xs no-print select-none" style={{ zoom: 1 }}>
+        <div className="mx-auto flex max-w-md md:max-w-6xl items-center justify-between px-2.5 py-1.5 sm:py-2">
           {/* 左側：社區切換與名稱 */}
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-xs">
-              <Building2 size={20} />
+          <div className="flex items-center gap-1.5 min-w-0">
+            <div className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-indigo-600 text-white shadow-xs">
+              <Building2 size={17} />
             </div>
 
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <select
                   aria-label="切換社區"
                   value={activeCommunity?.id || ''}
                   onChange={(e) => onSelectCommunity(e.target.value)}
-                  className="rounded-lg border border-slate-300 bg-white py-0.5 px-1.5 text-xs sm:text-sm font-black text-slate-900 shadow-2xs hover:border-indigo-400 focus:outline-none truncate max-w-[170px] sm:max-w-[240px]"
+                  className="rounded-md border border-slate-300 bg-white py-0.5 px-1.5 text-xs sm:text-sm font-black text-slate-900 shadow-2xs hover:border-indigo-400 focus:outline-none truncate max-w-[125px] sm:max-w-[220px]"
                 >
                   {communities.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -110,13 +110,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </select>
 
                 {activeMeeting && (
-                  <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 font-mono text-[11px] font-black text-amber-900 border border-amber-300">
+                  <span className="shrink-0 rounded bg-amber-100 px-1 py-0.2 font-mono text-[10px] font-black text-amber-900 border border-amber-300">
                     PIN:{activeMeeting.pin_code}
                   </span>
                 )}
               </div>
 
-              <div className="text-[10px] text-slate-500 truncate max-w-[180px] sm:max-w-none">
+              <div className="text-[10px] text-slate-500 truncate max-w-[160px] sm:max-w-none">
                 {currentMember ? (
                   <span className="font-bold text-indigo-700">
                     已登入: {currentMember.unit_no} {currentMember.owner_name}
@@ -128,14 +128,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* 右側：字級縮放 + LINE防跳出分享 + 抽屜選單按鈕 */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* 字體四段縮放按鈕：視覺顯示「大(20px) 小(12px)」，可循環放大 1.2x、1.4x、1.6x、2.0x */}
+          {/* 右側：字級縮放 (固定大小不放大) + LINE防跳出分享 + 抽屜選單按鈕 */}
+          <div className="flex items-center gap-1 shrink-0">
+            {/* 字體四段縮放按鈕：視覺顯示「大(20px) 小(12px)」，按鈕本體與字級保持緊湊不放大，避免擠壓整體介面 */}
             <button
               onClick={cycleFontScale}
               title={`切換字體大小 (目前 ${accessibility.fontScale || 1.0}x，點擊循環放大四段: 1.2x、1.4x、1.6x、2.0x)`}
               aria-label={`字體大小切換 目前 ${accessibility.fontScale || 1.0} 倍`}
-              className={`flex h-8 items-center gap-1 rounded-lg border px-2 transition-all shadow-2xs active:scale-95 ${
+              className={`flex h-7.5 sm:h-8 items-center gap-1 rounded-lg border px-1.5 sm:px-2 transition-all shadow-2xs active:scale-95 ${
                 (accessibility.fontScale || 1.0) > 1.0
                   ? 'bg-indigo-50 border-indigo-400 text-indigo-900 ring-1 ring-indigo-300'
                   : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
@@ -143,15 +143,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               {/* 依指示使用「大(20px) 小(12px)」視覺文字標籤 */}
               <span className="flex items-baseline leading-none select-none">
-                <span style={{ fontSize: '20px' }} className="font-black text-slate-900 leading-none">
+                <span style={{ fontSize: '17px' }} className="font-black text-slate-900 leading-none">
                   大
                 </span>
-                <span style={{ fontSize: '12px' }} className="font-bold text-slate-500 leading-none ml-0.5">
+                <span style={{ fontSize: '11px' }} className="font-bold text-slate-500 leading-none ml-0.5">
                   小
                 </span>
               </span>
               <span
-                className={`font-mono text-[10px] font-black px-1 rounded ${
+                className={`font-mono text-[9px] font-black px-1 rounded ${
                   (accessibility.fontScale || 1.0) > 1.0
                     ? 'bg-indigo-600 text-white'
                     : 'bg-slate-100 text-slate-600'
@@ -165,9 +165,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={onOpenLineShare}
               title="LINE 專用防跳出分享 (方案 A 外部瀏覽器開啟)"
-              className="flex h-8 items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2 text-xs font-black text-emerald-800 hover:bg-emerald-100 active:scale-95 transition-all shadow-2xs"
+              className="flex h-7.5 sm:h-8 items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-1.5 sm:px-2 text-xs font-black text-emerald-800 hover:bg-emerald-100 active:scale-95 transition-all shadow-2xs"
             >
-              <MessageCircle size={15} className="fill-emerald-600 text-emerald-600" />
+              <MessageCircle size={14} className="fill-emerald-600 text-emerald-600 shrink-0" />
               <span className="hidden sm:inline">LINE 分享</span>
             </button>
 
@@ -175,22 +175,22 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={onOpenSupabaseModal}
               title="Supabase 資料庫連線"
-              className={`flex h-8 w-8 items-center justify-center rounded-lg border text-xs font-bold ${
+              className={`flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-lg border text-xs font-bold ${
                 isCloudConnected
                   ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
                   : 'bg-slate-100 border-slate-200 text-slate-500'
               }`}
             >
-              <Database size={15} />
+              <Database size={14} />
             </button>
 
             {/* 手機版主要選單抽屜觸發按鈕 */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-xs hover:bg-indigo-700 active:scale-95 transition-all"
+              className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-xs hover:bg-indigo-700 active:scale-95 transition-all"
               aria-label="開啟功能選單"
             >
-              {isMobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
+              {isMobileMenuOpen ? <X size={16} /> : <Menu size={16} />}
             </button>
           </div>
         </div>
