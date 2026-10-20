@@ -11,7 +11,6 @@ import {
   Type,
   SunMoon,
   Building2,
-  Calendar,
   LogOut,
   QrCode as QrIcon,
   Menu,

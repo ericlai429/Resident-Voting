@@ -21,7 +21,7 @@ export function parseMeetingOcrText(rawText: string): OcrMeetingRecord {
     }
     // 匹配開會日期
     else if (/開會時間|會議日期|開會日期|大會日期/.test(line)) {
-      const match = line.match(/(?:[0-9]{2,4}[-\/年.][0-9]{1,2}[-\/月.][0-9]{1,2})/);
+      const match = line.match(/(?:[0-9]{2,4}[-/年.][0-9]{1,2}[-/月.][0-9]{1,2})/);
       if (match) {
         date = match[0];
       } else {

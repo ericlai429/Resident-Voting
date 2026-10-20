@@ -27,10 +27,11 @@ import {
   unlockMemberDevice,
   updateMemberPhone,
   subscribeToSyncEvents,
+  purgeVotesAndResetCheckIns,
+  purgeAllDemoDataForOfficialRoster,
 } from '../lib/storage';
 import { UniversalButton } from '../components/UniversalButton';
 import {
-  Shield,
   Plus,
   Trash2,
   Lock,
@@ -38,7 +39,6 @@ import {
   KeyRound,
   RefreshCw,
   Building,
-  Users,
   CheckCircle2,
   Smartphone,
   Eye,
@@ -46,11 +46,7 @@ import {
   Radio,
   Zap,
   Check,
-  X,
-  Phone,
-  Clock,
-  Sparkles,
-  AlertTriangle,
+  RotateCcw,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -86,12 +82,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // 重置住戶手機綁定搜尋
   const [searchMemberQuery, setSearchMemberQuery] = useState('');
-  const [resetSuccessUnit, setResetSuccessUnit] = useState<string | null>(null);
 
   // 大會服務台現場即時求助認證單
   const [deskRequests, setDeskRequests] = useState<DeskAuthRequest[]>(() => getDeskAuthRequests(meeting?.id));
   const [editingPhoneLast4, setEditingPhoneLast4] = useState<{ [memberId: string]: string }>({});
   const [activeNotice, setActiveNotice] = useState<string | null>(null);
+
+  // 清除測試資料與重置
+  const handlePurgeVotes = () => {
+    if (window.confirm('⚠️ 警告：這將會清除所有議案已投之選票紀錄、服務台求助單，並將所有住戶的報到與設備鎖定全數重置為未報到狀態。確定要執行嗎？')) {
+      const res = purgeVotesAndResetCheckIns(community.id);
+      onRefreshData();
+      setActiveNotice(res.message);
+      setTimeout(() => setActiveNotice(null), 6000);
+    }
+  };
+
+  const handlePurgeAllDemo = () => {
+    if (window.confirm('🚨 極高危操作警告：這將會徹底清空所有示範名冊資料與測試選票，將系統重置為全新空白狀態！\n\n確定要在匯入管委會正式名冊前執行全面淨空嗎？')) {
+      const res = purgeAllDemoDataForOfficialRoster(community.id);
+      onRefreshData();
+      setActiveNotice(res.message);
+      setTimeout(() => setActiveNotice(null), 6000);
+    }
+  };
 
   // 監聽全域同步事件 (當住戶送出求助或核准時即時更新)
   useEffect(() => {
@@ -267,18 +281,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       deleteTopic(topicId);
       setTopics(getTopics(meeting?.id));
     }
-  };
-
-  // 現場管理員解除住戶手機綁定 (忘記密碼 / 換新手機重置)
-  const handleResetDevice = (member: Member) => {
-    const updated: Member = {
-      ...member,
-      bound_device_token: undefined, // 清空綁定特徵值
-      reset_token: `TOKEN-${member.unit_no}-${Date.now().toString(36).toUpperCase()}`,
-    };
-    updateMember(updated);
-    setResetSuccessUnit(member.unit_no);
-    setTimeout(() => setResetSuccessUnit(null), 3000);
   };
 
   const members = getMembers(community.id);
@@ -713,6 +715,68 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* 🧹 大會正式上線淨空專區 (Pre-Meeting Purge & Reset) */}
+      <div className="rounded-3xl border-2 border-rose-200 bg-rose-50/60 p-6 shadow-md space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="rounded-2xl bg-rose-100 p-2.5 text-rose-700">
+            <Trash2 size={24} />
+          </div>
+          <div>
+            <h3 className="text-lg font-black text-rose-950 flex items-center gap-2">
+              <span>大會正式上線淨空專區 (不保留測試資料)</span>
+              <span className="rounded-md bg-rose-200 text-rose-900 text-[10px] font-black px-2 py-0.5">
+                高危管理操作
+              </span>
+            </h3>
+            <p className="text-xs text-rose-800">
+              在大會正式開始前，或準備匯入管委會正式名冊時，可將測試期間產生的票數與假資料完全淨空
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+          {/* 模式 1: 僅歸零票數與報到，保留名冊 */}
+          <div className="rounded-2xl bg-white border border-rose-200 p-4 space-y-2.5 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 font-bold text-slate-900 text-sm">
+                <RotateCcw size={16} className="text-amber-600" />
+                <span>模式 A：選票歸零與重置報到 (保留名冊)</span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                清空目前所有表決票數與求助單，將所有戶別的報到與手機特徵鎖定狀態全數歸零，保留目前的戶號清冊。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handlePurgeVotes}
+              className="w-full rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-98 text-white px-3 py-2 text-xs font-black shadow-xs transition-all"
+            >
+              🔄 確定清除選票 · 重置報到 (票數歸零)
+            </button>
+          </div>
+
+          {/* 模式 2: 全面淨空名冊，等待匯入真實 Excel */}
+          <div className="rounded-2xl bg-white border border-rose-300 p-4 space-y-2.5 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 font-bold text-rose-950 text-sm">
+                <Trash2 size={16} className="text-rose-600" />
+                <span>模式 B：全面淨空測試名冊 (迎接正式 Excel)</span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                全數清空 493 戶示範假名冊與測試選票，讓資料庫回到全新乾淨狀態，隨時準備上傳管委會真正的 Excel 清冊。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handlePurgeAllDemo}
+              className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-98 text-white px-3 py-2 text-xs font-black shadow-xs transition-all"
+            >
+              🧹 確定全面淨空 · 等待匯入正式名冊
+            </button>
+          </div>
         </div>
       </div>
 

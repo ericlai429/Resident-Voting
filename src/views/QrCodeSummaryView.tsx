@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { Community, Meeting, Topic, MeetingResultPayload } from '../types';
+import { Community, Meeting, MeetingResultPayload } from '../types';
 import { getTopics } from '../lib/storage';
 import {
   buildMeetingResultPayload,
@@ -18,7 +18,6 @@ import {
   FileText,
   Copy,
   Check,
-  Sparkles,
   Smartphone,
 } from 'lucide-react';
 

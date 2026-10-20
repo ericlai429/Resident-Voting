@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { Member, Meeting, Community } from '../types';
 import { UniversalButton } from '../components/UniversalButton';
-import { Download, ShieldCheck, Smartphone, CheckCircle, ArrowLeft } from 'lucide-react';
+import { Download, ShieldCheck, CheckCircle, ArrowLeft } from 'lucide-react';
 
 interface ResidentPassCardProps {
   member: Member;

@@ -795,7 +795,7 @@ export function addVote(vote: Vote): { success: boolean; message: string } {
   return { success: true, message: '投票成功！' };
 }
 
-export function calculateTopicStats(topic: Topic, communityTotalPing: number, totalRegisteredUnits: number): TopicVoteStats {
+export function calculateTopicStats(topic: Topic, _communityTotalPing?: number, _totalRegisteredUnits?: number): TopicVoteStats {
   const topicVotes = getVotes(topic.id);
   const totalVotes = topicVotes.length;
   const totalWeight = topicVotes.reduce((sum, v) => sum + (v.voted_weight || 0), 0);
@@ -852,4 +852,97 @@ export function calculateTopicStats(topic: Topic, communityTotalPing: number, to
     passed,
     decision_summary: decisionSummary
   };
+}
+
+// --------------------------------------------------------------------
+// 🧹 大會正式上線淨空專區 (Pre-Meeting Purge & Reset)
+// --------------------------------------------------------------------
+
+/**
+ * 模式 1：清除所有測試投票紀錄與服務台求助單，並重置所有住戶報到與設備綁定狀態 (票數歸零)
+ */
+export function purgeVotesAndResetCheckIns(communityId?: string): { success: boolean; message: string } {
+  // 1. 清空選票
+  localStorage.setItem(STORAGE_KEY_VOTES, JSON.stringify([]));
+
+  // 2. 清空大會服務台求助單
+  localStorage.setItem(STORAGE_KEY_AUTH_REQUESTS, JSON.stringify([]));
+
+  // 3. 重置住戶報到與手機特徵鎖定狀態
+  const members = getMembers(communityId);
+  const resetMembers = members.map(m => ({
+    ...m,
+    is_checked_in: false,
+    check_in_time: undefined,
+    bound_device_token: undefined,
+  }));
+  saveMembers(resetMembers);
+
+  // 4. 清除本機登入 Session
+  setCurrentMember(null);
+
+  // 5. 跨分頁即時廣播通知
+  broadcastSyncEvent({
+    type: 'VOTE_SUBMITTED',
+    timestamp: Date.now(),
+  });
+
+  const client = getSupabase();
+  if (client) {
+    client.from('votes').delete().neq('id', '00000000-0000-0000-0000-000000000000').then(() => {});
+    client.from('desk_auth_requests').delete().neq('id', '0').then(() => {});
+  }
+
+  return { success: true, message: '🎉 已成功清除所有測試選票與求助單，所有住戶報到與裝置綁定已全數重置歸零！' };
+}
+
+/**
+ * 模式 2：全面淨空名冊與資料庫 (完全清空，等待匯入管委會真實 Excel 名冊)
+ */
+export function purgeAllDemoDataForOfficialRoster(communityId?: string): { success: boolean; message: string } {
+  // 1. 清空選票與求助單
+  localStorage.setItem(STORAGE_KEY_VOTES, JSON.stringify([]));
+  localStorage.setItem(STORAGE_KEY_AUTH_REQUESTS, JSON.stringify([]));
+
+  // 2. 保留管理員帳號 (便於進入後台)，其餘示範名冊全數淨空
+  const members = getMembers(communityId);
+  const adminMember = members.find(m => m.role === 'admin' || m.role === 'admin1');
+  const cleanMembers: Member[] = adminMember ? [{
+    ...adminMember,
+    is_checked_in: false,
+    check_in_time: undefined,
+    bound_device_token: undefined,
+  }] : [];
+
+  saveMembers(cleanMembers);
+
+  // 3. 清除本機登入 Session
+  setCurrentMember(null);
+
+  // 4. 更新社區戶數與坪數為 0，等待 Excel 匯入
+  const comms = getCommunities();
+  const currentCommId = communityId || getActiveCommunityId();
+  const targetComm = comms.find(c => c.id === currentCommId);
+  if (targetComm) {
+    saveCommunity({
+      ...targetComm,
+      total_units: cleanMembers.length,
+      total_area_ping: cleanMembers.reduce((sum, m) => sum + m.area_ping, 0),
+    });
+  }
+
+  // 5. 跨分頁即時推播
+  broadcastSyncEvent({
+    type: 'MEMBER_AUTHORIZED',
+    timestamp: Date.now(),
+  });
+
+  const client = getSupabase();
+  if (client) {
+    client.from('votes').delete().neq('id', '00000000-0000-0000-0000-000000000000').then(() => {});
+    client.from('desk_auth_requests').delete().neq('id', '0').then(() => {});
+    client.from('members').delete().neq('role', 'admin').neq('role', 'admin1').then(() => {});
+  }
+
+  return { success: true, message: '🧹 已全面淨空測試名冊與選票！資料庫已準備就緒，請至「Excel 住戶清冊」匯入管委會正式名冊。' };
 }

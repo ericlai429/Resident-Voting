@@ -15,7 +15,6 @@ import {
   Unlock,
   Radio,
   Clock,
-  Send,
   CheckCheck,
 } from 'lucide-react';
 import { Member, Meeting, DeskAuthSyncEvent } from '../types';
@@ -29,6 +28,7 @@ import {
 import { UniversalButton } from '../components/UniversalButton';
 import { QrScannerModal } from '../components/QrScannerModal';
 import { UnitWheelPicker } from '../components/UnitWheelPicker';
+import { isUnitMatch } from '../lib/unitMatcher';
 
 interface ResidentLoginViewProps {
   activeMeeting: Meeting | null;
@@ -85,18 +85,10 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
     return `${blockStr}${floor}-${room}${subStr}`;
   }, [inputMode, manualUnitNo, wheelState]);
 
-  // 即時動態匹配名冊中的住戶預覽
+  // 即時動態匹配名冊中的住戶預覽 (支援智慧容錯比對，如 12F-08 vs 12F-8)
   const matchedPreviewMember = useMemo(() => {
     if (!computedUnitNo) return null;
-    const clean = computedUnitNo.toUpperCase();
-    return (
-      members.find(
-        (m) =>
-          m.unit_no.toUpperCase() === clean ||
-          m.unit_no.toUpperCase().includes(clean) ||
-          clean.includes(m.unit_no.toUpperCase())
-      ) || null
-    );
+    return members.find((m) => isUnitMatch(computedUnitNo, m.unit_no)) || null;
   }, [computedUnitNo, members]);
 
   // 監聽大會服務台即時授權核准訊號 (跨視窗/跨設備 Realtime)
@@ -109,7 +101,7 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
       const targetUnit = (phoneMismatchInfo?.member?.unit_no || computedUnitNo).toUpperCase();
 
       const isMatchUnit = (event.memberId && event.memberId === targetMemberId) ||
-        (event.unitNo && event.unitNo.toUpperCase() === targetUnit);
+        (event.unitNo && isUnitMatch(event.unitNo, targetUnit));
 
       const isMatchDevice = event.targetDeviceUuid === currentDeviceUUID;
 
@@ -229,12 +221,8 @@ export const ResidentLoginView: React.FC<ResidentLoginViewProps> = ({
       }
     }
 
-    // 在名冊中比對住戶
-    const member = matchedPreviewMember || members.find(
-      (m) =>
-        m.unit_no.toUpperCase().includes(computedUnitNo.toUpperCase()) ||
-        computedUnitNo.toUpperCase().includes(m.unit_no.toUpperCase())
-    );
+    // 在名冊中比對住戶 (支援智慧容錯比對)
+    const member = matchedPreviewMember || members.find((m) => isUnitMatch(computedUnitNo, m.unit_no));
 
     if (!member) {
       setErrorMsg(`在名冊中查無戶號【${computedUnitNo}】，請核對是否選對棟別或樓層。`);

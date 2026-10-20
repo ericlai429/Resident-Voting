@@ -11,7 +11,6 @@ import {
   getTopics,
   getVotes,
   addVote,
-  calculateTopicStats,
 } from '../lib/storage';
 import { UniversalButton } from '../components/UniversalButton';
 import {
@@ -109,6 +108,9 @@ export const ResidentVoteView: React.FC<ResidentVoteViewProps> = ({
               <div className="flex items-center gap-2">
                 <span className="text-xl sm:text-2xl font-black text-slate-900">
                   {member.unit_no}
+                </span>
+                <span className="rounded-full bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 text-xs font-bold text-indigo-700">
+                  {community.name}
                 </span>
                 <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
                   已報到

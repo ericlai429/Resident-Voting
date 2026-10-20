@@ -1,9 +1,9 @@
-import React, { useRef } from 'react';
-import { Community, Meeting, Topic } from '../types';
+import React from 'react';
+import { Community, Meeting } from '../types';
 import { getTopics } from '../lib/storage';
 import { compileMeetingReportData, triggerA3Print } from '../lib/pdfReportGenerator';
 import { UniversalButton } from '../components/UniversalButton';
-import { Printer, Download, ArrowLeft, FileText, CheckCircle, Shield } from 'lucide-react';
+import { Printer, ArrowLeft } from 'lucide-react';
 
 interface ReportA3ViewProps {
   community: Community;

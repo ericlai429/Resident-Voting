@@ -10,7 +10,6 @@ import {
 } from '../lib/excelParser';
 import { UniversalButton } from '../components/UniversalButton';
 import {
-  FileSpreadsheet,
   Upload,
   Download,
   CheckCircle,
@@ -18,7 +17,6 @@ import {
   Search,
   Check,
   Smartphone,
-  Shield,
   FileCheck2,
   Zap,
   Unlock,
@@ -148,13 +146,16 @@ export const MemberManagement: React.FC<MemberManagementProps> = ({
         </div>
 
         <div className="flex flex-wrap gap-2.5">
-          <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-md shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all">
+          <label className={`flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-md shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all ${
+            isUploading ? 'opacity-70 pointer-events-none' : ''
+          }`}>
             <Upload size={18} />
-            <span>匯入 Excel 區權人清冊</span>
+            <span>{isUploading ? '正在解析 Excel...' : '匯入 Excel 區權人清冊'}</span>
             <input
               type="file"
               accept=".xlsx,.xls,.csv"
               className="hidden"
+              disabled={isUploading}
               onChange={handleFileUpload}
             />
           </label>

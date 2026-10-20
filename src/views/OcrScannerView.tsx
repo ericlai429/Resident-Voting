@@ -6,7 +6,6 @@ import { UniversalButton } from '../components/UniversalButton';
 import {
   ScanText,
   Camera,
-  Image as ImageIcon,
   Sparkles,
   CheckCircle2,
   AlertCircle,
